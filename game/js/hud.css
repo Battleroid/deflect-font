@@ -505,6 +505,298 @@
 .over-btn:hover { background: var(--bone); }
 .over-btn:focus-visible { outline: var(--rule) solid var(--bone); outline-offset: 4px; }
 
+/* ------------------------------------------------------------ xp + level    */
+
+/* A silkscreened strip right along the top edge: nothing else lives up there,
+   so the bar reads instantly without arguing with the hull or the ammo panel. */
+.hud-xp {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.xp-track {
+  position: relative;
+  height: 8px;
+  background: var(--grid);
+  border-bottom: 2px solid var(--ink);
+  overflow: hidden;
+}
+
+.xp-fill {
+  display: block;
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: var(--amber);
+}
+
+/* brim-full and still not levelled: go bone so it stops reading as "filling" */
+.xp-track.brimming .xp-fill { background: var(--bone); }
+
+.xp-level {
+  display: inline-block;
+  padding: 3px 12px 4px;
+  background: var(--ink);
+  color: var(--bone);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  line-height: 1;
+}
+
+/* -------------------------------------------------------- upgrades taken    */
+
+.hud-taken {
+  position: absolute;
+  left: var(--m);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 164px;
+  text-align: left;
+  line-height: 1;
+}
+
+.hud-taken.empty { display: none; }
+
+.taken-key {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: var(--grey);
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--grid);
+  margin-bottom: 7px;
+}
+
+.taken-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  line-height: 1.75;
+  color: var(--bone-dim);
+  white-space: nowrap;
+}
+
+.taken-row.off { display: none; }
+
+.taken-row .tk-x {
+  font-weight: 700;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.taken-row .tk-x.single { color: var(--grey); }
+
+/* ------------------------------------------------------- the level chooser  */
+
+.hud-lvup {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  z-index: 35;
+}
+
+.hud-lvup.hidden { display: none; pointer-events: none; }
+
+/* the playfield stays visible underneath, just knocked well back */
+.lvup-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--void);
+  opacity: 0.82;
+}
+
+.lvup-panel {
+  position: relative;
+  width: 100%;
+  max-width: 1060px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.hud-lvup.live .lvup-panel { animation: lvup-in 0.1s steps(2, end) both; }
+
+@keyframes lvup-in {
+  from { opacity: 0; transform: scale(0.93); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.lvup-kicker {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.46em;
+  color: var(--amber);
+}
+
+.lvup-title {
+  margin-top: 10px;
+  font-weight: 700;
+  font-size: clamp(34px, 6vw, 76px);
+  line-height: 0.92;
+  letter-spacing: 0.08em;
+  color: var(--bone);
+}
+
+.lvup-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 26px 0 14px;
+  align-items: stretch;
+  text-align: left;
+}
+
+/* two choices, or one: centre them instead of leaving a hole */
+.hud-lvup.few .lvup-cards { display: flex; justify-content: center; }
+.hud-lvup.few .lvup-card { flex: 0 1 300px; }
+
+.lvup-card {
+  --rar: var(--bone);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font: inherit;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 20px 18px 18px;
+  background: var(--ground);
+  color: var(--bone);
+  border: var(--rule) solid var(--rar);
+  border-radius: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.lvup-card.hidden { display: none; }
+
+.lvup-card.r-rare { --rar: var(--blue); }
+
+/* an epic wears the amber outright: heavier rule, solid banner */
+.lvup-card.r-epic {
+  --rar: var(--amber);
+  border-width: 5px;
+}
+
+.lvup-card:hover,
+.lvup-card:focus,
+.lvup-card:focus-visible {
+  background: var(--grid);
+  outline: var(--rule) solid var(--rar);
+  outline-offset: 4px;
+}
+
+.lvup-card:hover .card-desc,
+.lvup-card:focus .card-desc { color: var(--bone); }
+
+.card-key {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0;
+  background: var(--rar);
+  color: var(--ink);
+}
+
+.card-rar {
+  align-self: flex-start;
+  margin-right: 32px;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: var(--rar);
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--rar);
+}
+
+.lvup-card.r-epic .card-rar {
+  padding: 4px 9px 5px;
+  border-bottom: 0;
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.card-name {
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  color: var(--rar);
+}
+
+.card-desc {
+  flex: 1 1 auto;
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  line-height: 1.55;
+  color: var(--bone-dim);
+}
+
+.card-rank {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.card-pips { display: flex; gap: 3px; }
+.card-pips.off { display: none; }
+
+.card-pips .pip {
+  display: none;
+  width: 13px;
+  height: 8px;
+  background: var(--grid);
+}
+
+.card-pips .pip.used { display: block; }
+.card-pips .pip.on { background: var(--rar); }
+
+.card-rank-t {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--bone-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.lvup-card.maxed .card-rank-t { color: var(--amber); }
+
+.lvup-hint {
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: var(--grey);
+}
+
+/* snap in, staggered by a couple of frames -- this interrupts a fight */
+.hud-lvup.live .lvup-card { animation: card-in 0.12s steps(2, end) both; }
+.hud-lvup.live .lvup-card:nth-child(1) { animation-delay: 0.03s; }
+.hud-lvup.live .lvup-card:nth-child(2) { animation-delay: 0.07s; }
+.hud-lvup.live .lvup-card:nth-child(3) { animation-delay: 0.11s; }
+
+@keyframes card-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ----------------------------------------------------------- narrow screens */
 
 @media (max-width: 1200px) {
@@ -512,6 +804,10 @@
   .bar { width: 196px; }
   .hull-bar .seg { width: 12px; height: 22px; }
   .hull-num { font-size: 36px; }
+  .lvup-cards { gap: 12px; }
+  .lvup-card { padding: 16px 14px 14px; }
+  .card-name { font-size: 19px; }
+  .hud-taken { width: 140px; }
 }
 
 @media (max-width: 900px) {
@@ -533,6 +829,33 @@
   .over-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 22px 0; }
   .over-val { font-size: 26px; }
   .over-btn { font-size: 18px; padding: 12px 34px; }
+
+  /* three cards still fit side by side here, just tighter */
+  .xp-level { font-size: 10px; letter-spacing: 0.26em; padding: 2px 9px 3px; }
+  .hud-taken { display: none; }       /* the cards matter more than the mod list */
+  .lvup-panel { padding: 0 14px; }
+  .lvup-kicker { font-size: 10px; letter-spacing: 0.34em; }
+  .lvup-cards { gap: 9px; margin: 18px 0 10px; }
+  .lvup-card { padding: 13px 11px 12px; gap: 8px; }
+  .card-key { width: 22px; height: 22px; line-height: 22px; font-size: 11px; }
+  .card-rar { font-size: 9px; letter-spacing: 0.28em; margin-right: 26px; }
+  .card-name { font-size: 16px; letter-spacing: 0.06em; }
+  .card-desc { font-size: 11px; letter-spacing: 0.12em; line-height: 1.45; }
+  .card-pips .pip { width: 9px; height: 7px; }
+  .card-rank-t { font-size: 10px; }
+  .lvup-hint { font-size: 9px; letter-spacing: 0.28em; }
+}
+
+/* below this the cards stop fitting abreast -- stack them */
+@media (max-width: 700px) {
+  .lvup-cards { grid-template-columns: minmax(0, 1fr); }
+  .hud-lvup.few .lvup-cards { flex-direction: column; }
+  .hud-lvup.few .lvup-card { flex: 0 0 auto; }
+  .lvup-card { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+  .card-rar { margin-right: 26px; }
+  .card-name { flex: 1 1 100%; }
+  .card-desc { flex: 1 1 100%; }
+  .card-rank { margin-top: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -540,4 +863,7 @@
   .hud-bl.critical,
   .bar.over .bar-fill,
   .gauge-lab.over { animation: none; }
+
+  .hud-lvup.live .lvup-panel,
+  .hud-lvup.live .lvup-card { animation: none; }
 }

@@ -240,9 +240,13 @@ export class Vehicle {
   }
 
   moveTo(nx, nz, world) {
-    const r = world.arenaRadius - this.radius;
-    const d = Math.hypot(nx, nz);
-    if (d > r) { nx = (nx / d) * r; nz = (nz / d) * r; this.speed *= 0.4; }
+    // The arena is a square with a kerb, so clamp to a square. Clamping to a
+    // circle (as this used to) stopped the hull several units short of the
+    // visible wall along the axes and made the corners unreachable entirely --
+    // an invisible barrier with floor painted beyond it.
+    const b = world.bounds - this.radius;
+    if (nx < -b || nx > b) { nx = Math.max(-b, Math.min(b, nx)); this.speed *= 0.4; }
+    if (nz < -b || nz > b) { nz = Math.max(-b, Math.min(b, nz)); this.speed *= 0.4; }
 
     for (const o of world.obstacles) {
       if (!o.solid) continue;
@@ -324,16 +328,34 @@ export class PlayerTank extends Vehicle {
     this.mgCooldown = 0;
     this.invuln = 0;
     this.kills = 0;
+
+    /* Upgrades scale off these, never off the current values, so re-applying is
+     * idempotent and ranks never compound on themselves. */
+    this.base = { maxSpeed: 15, turnRate: 1.9, turretRate: 2.1, maxHp: 100 };
+    this.up = null;
   }
 
   get round() { return ROUNDS[this.roundIndex]; }
+
+  /** Recompute everything the upgrade tree touches. Safe to call repeatedly. */
+  applyUpgrades(s) {
+    this.up = s;
+    this.maxSpeed = this.base.maxSpeed * s.speedMul;
+    this.turnRate = this.base.turnRate * s.turnMul;
+    this.turretRate = this.base.turretRate * s.traverseMul;
+    const nextMax = this.base.maxHp + s.maxHpAdd;
+    const gained = nextMax - this.maxHp;
+    this.maxHp = nextMax;
+    if (gained > 0) this.hp = Math.min(this.maxHp, this.hp + gained);  // new plate is whole
+    this.reloadTime = this.round.reload * s.reloadMul;
+  }
 
   selectRound(i) {
     if (i < 0 || i >= ROUNDS.length || i === this.roundIndex) return false;
     this.roundIndex = i;
     // swapping mid-load costs you the partial load, which makes the choice matter
     this.reload = Math.min(this.reload, 0.35);
-    this.reloadTime = this.round.reload;
+    this.reloadTime = this.round.reload * (this.up ? this.up.reloadMul : 1);
     return true;
   }
 
@@ -347,20 +369,21 @@ export class PlayerTank extends Vehicle {
     this.tickReload(dt);
 
     // coax machine gun heat
+    const cool = this.up ? this.up.coolMul : 1;
     if (this.mgCooldown > 0) this.mgCooldown -= dt;
     if (this.mgOverheated) {
-      this.mgHeat -= dt * 0.5;        // ~2s locked out, long enough to sting
+      this.mgHeat -= dt * 0.5 * cool;   // ~2s locked out, long enough to sting
       if (this.mgHeat <= 0) { this.mgHeat = 0; this.mgOverheated = false; }
     } else if (!input.mgHeld) {
-      this.mgHeat = Math.max(0, this.mgHeat - dt * 0.42);
+      this.mgHeat = Math.max(0, this.mgHeat - dt * 0.42 * cool);
     }
     this.syncMesh(dt);
   }
 
-  fireMG(dt) {
+  fireMG() {
     if (this.mgOverheated || this.mgCooldown > 0) return false;
-    this.mgHeat += 0.055;
-    this.mgCooldown = 0.075;
+    this.mgHeat += 0.055 * (this.up ? this.up.heatMul : 1);
+    this.mgCooldown = 0.075 / (this.up ? this.up.mgRateMul : 1);
     if (this.mgHeat >= 1) { this.mgHeat = 1; this.mgOverheated = true; }
     return true;
   }
@@ -428,8 +451,10 @@ export class EnemyTank extends Vehicle {
       throttle = 1;
       desired = toPlayer + this.flankOffset * 1.15;   // arc around rather than charge
     } else {
-      // angle the hull so the player gets a sloped plate, not a flat one
-      desired = toPlayer + 0.55 * this.flankSign;
+      // Angle the hull so the player gets a sloped plate, not a flat one.
+      // 45 degrees, not 30: past the 35-degree ricochet threshold, so holding
+      // at an angle actually bounces AP instead of merely looking like it might.
+      desired = toPlayer + 0.78 * this.flankSign;
     }
 
     desired = this._avoid(desired, world, dt, throttle * this.maxSpeed);
@@ -460,7 +485,7 @@ export class EnemyTank extends Vehicle {
   /** Nudge the desired heading away from anything solid directly ahead. */
   _avoid(desired, world, dt, intendedSpeed) {
     // bend away from the arena wall first, then round everything else
-    if (Math.hypot(this.x, this.z) > world.arenaRadius - 10) {
+    if (Math.max(Math.abs(this.x), Math.abs(this.z)) > world.bounds - 12) {
       const inward = Math.atan2(-this.x, -this.z);
       desired = wrapAngle(desired + wrapAngle(inward - desired) * 0.5);
     }
@@ -541,9 +566,9 @@ export class Infantry {
       const min = o.radius + this.radius;
       if (d < min && d > 0.0001) { nx = o.x + (ox / d) * min; nz = o.z + (oz / d) * min; }
     }
-    const r = world.arenaRadius - this.radius;
-    const ed = Math.hypot(nx, nz);
-    if (ed > r) { nx = (nx / ed) * r; nz = (nz / ed) * r; }
+    const b = world.bounds - this.radius;
+    nx = Math.max(-b, Math.min(b, nx));
+    nz = Math.max(-b, Math.min(b, nz));
     this.x = nx; this.z = nz;
 
     this.cooldown -= dt;
@@ -593,7 +618,7 @@ export class Shell {
     const hit = world.castShell(this, nx, nz);
     if (hit) { this.x = hit.x; this.z = hit.z; } else { this.x = nx; this.z = nz; }
 
-    if (Math.hypot(this.x, this.z) > world.arenaRadius) this.dead = true;
+    if (Math.abs(this.x) > world.bounds || Math.abs(this.z) > world.bounds) this.dead = true;
   }
 }
 

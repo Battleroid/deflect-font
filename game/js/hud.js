@@ -16,6 +16,11 @@ const POPUP_POOL = 64;
 const LOUD = { ricochet: 1, crit: 1 };
 const UNLIMITED = 'UNL';
 
+const LVUP_SLOTS = 3;         // cards the chooser can ever show
+const PIP_MAX = 8;            // rank pips per card; above this we fall back to text
+const TAKEN_ROWS = 10;        // rows in the "already taken" list
+const RARITIES = ['common', 'rare', 'epic'];
+
 /* ------------------------------------------------------------------- state */
 
 let root = null;
@@ -36,6 +41,17 @@ let bannerLeft = 0;
 let flashLeft = 0;
 let onRestart = null;
 let cursorShown = false;
+
+/* the level-up chooser */
+const lvupCards = [];         // one entry per slot: { card, rar, name, desc, pips, ... }
+let lvupChoices = [];
+let lvupOpen = false;
+let lvupPicked = false;       // belt and braces: onPick fires exactly once
+let onPick = null;
+
+/* the taken-upgrade list */
+const takenRows = [];
+const takenCache = [];        // mirror of the last list we wrote, so no string churn
 
 /* ------------------------------------------------------------- tiny helpers */
 
@@ -201,6 +217,62 @@ function buildGameOver() {
   });
 }
 
+/* A slim strip pinned to the very top edge: the experience bar, with the level
+ * numeral under it. Deliberately nowhere near the hull bar or the ammo panel. */
+function buildXp() {
+  const strip = add(root, mk('div', 'hud-xp'));
+  n.xpTrack = add(strip, mk('div', 'xp-track'));
+  n.xpFill = add(n.xpTrack, mk('i', 'xp-fill'));
+  n.xpLevel = add(strip, mk('div', 'xp-level', 'LVL 1'));
+}
+
+/* Upgrades already taken -- a quiet column down the left flank. */
+function buildTaken() {
+  n.taken = add(root, mk('div', 'hud-taken empty'));
+  add(n.taken, mk('div', 'taken-key', 'MODS'));
+  const list = add(n.taken, mk('div', 'taken-list'));
+  for (let i = 0; i < TAKEN_ROWS; i++) {
+    const row = add(list, mk('div', 'taken-row off'));
+    const name = add(row, mk('span', 'tk-n', ''));
+    const mult = add(row, mk('b', 'tk-x', ''));
+    takenRows.push({ row: row, name: name, mult: mult });
+  }
+}
+
+function buildLevelUp() {
+  n.lvup = add(root, mk('div', 'hud-lvup hidden'));
+  add(n.lvup, mk('i', 'lvup-dim'));
+
+  const panel = add(n.lvup, mk('div', 'lvup-panel'));
+  add(panel, mk('div', 'lvup-kicker', 'FIELD PROMOTION'));
+  n.lvupTitle = add(panel, mk('div', 'lvup-title', 'LEVEL 2'));
+
+  const cards = add(panel, mk('div', 'lvup-cards'));
+  for (let i = 0; i < LVUP_SLOTS; i++) {
+    const card = add(cards, mk('button', 'lvup-card r-common'));
+    card.type = 'button';
+    add(card, mk('b', 'card-key', String(i + 1)));
+    const rar = add(card, mk('div', 'card-rar', 'COMMON'));
+    const name = add(card, mk('div', 'card-name', ''));
+    const desc = add(card, mk('div', 'card-desc', ''));
+    const rank = add(card, mk('div', 'card-rank'));
+    const pipRow = add(rank, mk('div', 'card-pips'));
+    const pips = [];
+    for (let p = 0; p < PIP_MAX; p++) pips.push(add(pipRow, mk('i', 'pip')));
+    const rankTxt = add(rank, mk('span', 'card-rank-t', ''));
+
+    /* the index is baked in, so a click can never resolve to another card */
+    card.addEventListener('click', function () { choose(i); });
+
+    lvupCards.push({
+      card: card, rar: rar, name: name, desc: desc,
+      pipRow: pipRow, pips: pips, rankTxt: rankTxt,
+    });
+  }
+
+  add(panel, mk('div', 'lvup-hint', 'CLICK OR PRESS 1 - 3'));
+}
+
 /* --------------------------------------------------------------------- API */
 
 export const HUD = {
@@ -212,10 +284,13 @@ export const HUD = {
 
     root.textContent = '';
     buildCorners();
+    buildXp();
+    buildTaken();
     buildPopups();
     buildBannerFlash();
     buildReticle();
     buildGameOver();
+    buildLevelUp();
     root.classList.add('hud-ready');
     built = true;
   },
@@ -295,6 +370,26 @@ export const HUD = {
       txt(n.reloadLab, ready ? 'GUN READY' : 'RELOAD');
       flag(n.reloadLab, 'ready', ready);
     }
+
+    /* experience + level */
+    if (prev.level !== s.level) {
+      prev.level = s.level;
+      const lv = typeof s.level === 'number' && s.level > 0 ? Math.floor(s.level) : 1;
+      txt(n.xpLevel, 'LVL ' + lv);
+    }
+
+    if (prev.xp !== s.xp || prev.xpNext !== s.xpNext) {
+      prev.xp = s.xp;
+      prev.xpNext = s.xpNext;
+      const need = typeof s.xpNext === 'number' && s.xpNext > 0 ? s.xpNext : 0;
+      const got = typeof s.xp === 'number' && s.xp > 0 ? s.xp : 0;
+      const ratio = need > 0 ? got / need : 0;
+      fill(n.xpFill, ratio);
+      flag(n.xpTrack, 'brimming', ratio >= 1);
+    }
+
+    /* upgrades taken -- compared field by field, so no per-frame allocation */
+    if (takenChanged(s.taken)) writeTaken(s.taken);
 
     /* mg heat */
     if (prev.mgHeat !== s.mgHeat || prev.mgOverheated !== s.mgOverheated) {
@@ -414,6 +509,52 @@ export const HUD = {
     n.over.classList.remove('live');
   },
 
+  /* ---- the level-up chooser; the game stays paused while it is open ---- */
+  showLevelUp(level, choices, cb) {
+    if (!built) return;
+
+    const list = [];
+    if (choices && choices.length) {
+      for (let i = 0; i < choices.length && i < LVUP_SLOTS; i++) {
+        if (choices[i]) list.push(choices[i]);
+      }
+    }
+
+    txt(n.lvupTitle, 'LEVEL ' + (level === undefined || level === null ? '' : level));
+
+    for (let i = 0; i < LVUP_SLOTS; i++) writeCard(lvupCards[i], list[i]);
+    flag(n.lvup, 'few', list.length > 0 && list.length < LVUP_SLOTS);
+
+    lvupChoices = list;
+    onPick = typeof cb === 'function' ? cb : null;
+    lvupPicked = false;
+    lvupOpen = true;
+
+    n.lvup.classList.remove('hidden');
+    retrigger(n.lvup, 'live');
+
+    /* one handler, one registration -- removed again in hideLevelUp */
+    window.removeEventListener('keydown', lvupKey, true);
+    window.addEventListener('keydown', lvupKey, true);
+
+    if (list.length) lvupCards[0].card.focus();
+  },
+
+  hideLevelUp() {
+    if (!built) return;
+    window.removeEventListener('keydown', lvupKey, true);
+    lvupOpen = false;
+    onPick = null;
+    lvupChoices = [];
+    /* hand the keyboard back to the game */
+    const act = document.activeElement;
+    if (act && n.lvup.contains(act) && typeof act.blur === 'function') act.blur();
+    n.lvup.classList.add('hidden');
+    n.lvup.classList.remove('live');
+  },
+
+  get levelUpOpen() { return lvupOpen; },
+
   /* ---- advance everything transient ---- */
   update(dt) {
     if (!built) return;
@@ -458,6 +599,10 @@ export const HUD = {
     n.flash.classList.remove('live', 'k-taken', 'k-kill');
 
     HUD.hideGameOver();
+    HUD.hideLevelUp();
+
+    takenCache.length = 0;
+    writeTaken(null);
 
     for (const key in prev) delete prev[key];
     prevHullFilled = -1;
@@ -466,6 +611,100 @@ export const HUD = {
 };
 
 /* --------------------------------------------------------------- internals */
+
+/* ---- the chooser ---- */
+
+function writeCard(slot, c) {
+  if (!slot) return;
+  flag(slot.card, 'hidden', !c);
+  slot.card.disabled = !c;
+  if (!c) return;
+
+  const rarity = RARITIES.indexOf(c.rarity) >= 0 ? c.rarity : 'common';
+  for (let i = 0; i < RARITIES.length; i++) {
+    flag(slot.card, 'r-' + RARITIES[i], RARITIES[i] === rarity);
+  }
+
+  txt(slot.rar, rarity);
+  txt(slot.name, String(c.name === undefined || c.name === null ? '' : c.name));
+  txt(slot.desc, String(c.desc === undefined || c.desc === null ? '' : c.desc));
+
+  const lv = typeof c.level === 'number' && c.level > 0 ? Math.floor(c.level) : 1;
+  const max = c.maxLevel;
+  const capped = typeof max === 'number' && isFinite(max) && max > 0;
+
+  if (capped && max <= PIP_MAX) {
+    flag(slot.pipRow, 'off', false);
+    for (let p = 0; p < PIP_MAX; p++) {
+      flag(slot.pips[p], 'used', p < max);
+      flag(slot.pips[p], 'on', p < lv);
+    }
+    txt(slot.rankTxt, lv + ' / ' + max);
+  } else {
+    /* too many ranks to draw, or no ceiling at all: just say it */
+    flag(slot.pipRow, 'off', true);
+    txt(slot.rankTxt, capped ? lv + ' / ' + max : 'RANK ' + lv);
+  }
+  flag(slot.card, 'maxed', capped && lv >= max);
+}
+
+function choose(i) {
+  if (!lvupOpen || lvupPicked) return;
+  const c = lvupChoices[i];
+  if (!c) return;
+  const fn = onPick;
+  lvupPicked = true;            // hideLevelUp clears onPick, this guards the rest
+  HUD.hideLevelUp();
+  if (typeof fn === 'function') fn(c.id);
+}
+
+/* Captured, so 1/2/3 cannot also switch the round underneath. */
+function lvupKey(e) {
+  if (!lvupOpen) return;
+  let i = -1;
+  if (e.key === '1' || e.code === 'Digit1' || e.code === 'Numpad1') i = 0;
+  else if (e.key === '2' || e.code === 'Digit2' || e.code === 'Numpad2') i = 1;
+  else if (e.key === '3' || e.code === 'Digit3' || e.code === 'Numpad3') i = 2;
+  if (i < 0 || !lvupChoices[i]) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+  choose(i);
+}
+
+/* ---- the taken list ---- */
+
+function takenChanged(list) {
+  const len = list && list.length ? list.length : 0;
+  if (len !== takenCache.length) return true;
+  for (let i = 0; i < len; i++) {
+    const a = takenCache[i];
+    const b = list[i];
+    if (!a || !b || a.name !== b.name || a.level !== b.level) return true;
+  }
+  return false;
+}
+
+function writeTaken(list) {
+  const len = list && list.length ? list.length : 0;
+  const shown = len < TAKEN_ROWS ? len : TAKEN_ROWS;
+
+  for (let i = 0; i < TAKEN_ROWS; i++) {
+    const row = takenRows[i];
+    const item = i < shown ? list[i] : null;
+    flag(row.row, 'off', !item);
+    if (!item) continue;
+    txt(row.name, String(item.name === undefined || item.name === null ? '' : item.name));
+    const lv = typeof item.level === 'number' && item.level > 1 ? Math.floor(item.level) : 1;
+    txt(row.mult, 'x' + lv);
+    flag(row.mult, 'single', lv <= 1);
+  }
+
+  flag(n.taken, 'empty', len === 0);
+
+  takenCache.length = len;
+  for (let i = 0; i < len; i++) takenCache[i] = { name: list[i].name, level: list[i].level };
+}
 
 function render(p) {
   const t = p.t / p.ttl;
