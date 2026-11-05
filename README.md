@@ -12,7 +12,8 @@ Q whose tail crosses its bowl.
 Two weights, **Regular** (stroke 0.13 × cap height) and **Bold** (0.22), as scalable
 outlines *and* as hand-fitted pixel fonts for small displays.
 
-Public domain, [CC0 1.0](LICENSE). Use it for anything, no credit needed.
+Dedicated to the public domain under [CC0 1.0](LICENSE) — the font and the tools that
+build it. Use them for anything, commercial or not, with no attribution.
 
 ---
 
