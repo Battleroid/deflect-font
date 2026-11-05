@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+
+# The brief this was built from; kept locally as the provenance record.
+HANDOFF.md

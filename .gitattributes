@@ -1,0 +1,9 @@
+# Keep LF everywhere: the BDF, C and header files are generated with LF endings and
+# the verification scripts read them back byte for byte.
+* text=auto eol=lf
+
+*.png  binary
+*.otf  binary
+*.ttf  binary
+*.woff2 binary
+*.bdf  text eol=lf
