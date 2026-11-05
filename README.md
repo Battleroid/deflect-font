@@ -15,6 +15,11 @@ outlines *and* as hand-fitted pixel fonts for small displays.
 Dedicated to the public domain under [CC0 1.0](LICENSE) — the font and the tools that
 build it. Use them for anything, commercial or not, with no attribution.
 
+**[Play DEFLECT](https://battleroid.github.io/deflect-font/)** — a top-down tank survival
+game built to show the typeface doing its job: every damage number, every RICOCHET, the
+whole HUD and the range markings painted on the dirt are set in it. Source in
+[`game/`](game/), published to the `gh-pages` branch.
+
 ---
 
 ## Which file do I want?
@@ -152,7 +157,16 @@ grid and stay crisp where an antialiased outline turns to grey mush.
 
 Double-click `dist/otf/DeflectStencil-Regular.otf`, or drop the files in
 `%LOCALAPPDATA%\Microsoft\Windows\Fonts`. The `dist/ttf/` build is the same design
-with quadratic curves, for anything that prefers TrueType.
+with quadratic curves, for anything that prefers TrueType, and ships `.woff2`
+alongside it for the web — under 5 KB a weight:
+
+```css
+@font-face {
+  font-family: 'Deflect Stencil';
+  src: url('DeflectStencil-Regular.woff2') format('woff2');
+  font-weight: 400;
+}
+```
 
 ### BDF
 

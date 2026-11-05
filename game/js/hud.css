@@ -1,0 +1,543 @@
+/* DEFLECT -- HUD skin.
+ *
+ * Instrument-panel silkscreen: flat colour, hard edges, no radius, no shadow,
+ * no blur, no gradient. One typeface, all caps, wide tracking. Colours come
+ * only from the vars in style.css (which mirror palette.js).
+ */
+
+#hud {
+  --m: 34px;          /* margin from the screen edge */
+  --key: 12px;        /* small label size */
+  --big: 72px;        /* the headline numerals */
+  --meta: 13px;
+  --rule: 3px;
+  font-family: 'Deflect Stencil', ui-monospace, monospace;
+  text-transform: uppercase;
+  z-index: 20;
+}
+
+#hud * { box-sizing: border-box; }
+
+/* ------------------------------------------------------------------ blocks */
+
+.hud-block {
+  position: absolute;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hud-tl { top: var(--m); left: var(--m); }
+.hud-tr { top: var(--m); right: var(--m); text-align: right; }
+.hud-bl { bottom: var(--m); left: var(--m); }
+.hud-br { bottom: var(--m); right: var(--m); text-align: right; }
+
+.hud-key {
+  font-weight: 700;
+  font-size: var(--key);
+  letter-spacing: 0.4em;
+  color: var(--amber);
+  padding-bottom: 7px;
+  border-bottom: var(--rule) solid var(--amber);
+  margin-bottom: 9px;
+  display: block;
+}
+
+.hud-tr .hud-key,
+.hud-br .hud-key {
+  color: var(--bone);
+  border-bottom-color: var(--bone);
+}
+
+.hud-big {
+  font-weight: 700;
+  font-size: var(--big);
+  letter-spacing: 0.02em;
+  color: var(--bone);
+  line-height: 0.86;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-meta {
+  margin-top: 8px;
+  font-weight: 400;
+  font-size: var(--meta);
+  letter-spacing: 0.26em;
+  color: var(--bone-dim);
+}
+
+.hud-meta.clear { color: var(--amber); }
+
+/* ------------------------------------------------------------- hull, bot-l */
+
+.hull-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.hull-bar {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 2px solid var(--ink);
+  background: var(--grid);
+}
+
+.hull-bar .seg {
+  display: block;
+  width: 15px;
+  height: 26px;
+  background: var(--void);
+}
+
+.hull-bar .seg.on { background: var(--bone); }
+.hud-bl.low .seg.on { background: var(--red); }
+
+.hull-num {
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 0.8;
+  color: var(--bone);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-bl.low .hull-num,
+.hud-bl.low .hud-key { color: var(--red); }
+.hud-bl.low .hud-key { border-bottom-color: var(--red); }
+
+/* low hull pulses; critical pulses harder */
+.hud-bl.low { animation: hull-pulse 0.9s steps(1, end) infinite; }
+.hud-bl.critical { animation-duration: 0.42s; }
+
+@keyframes hull-pulse {
+  0%, 59% { opacity: 1; }
+  60%, 100% { opacity: 0.42; }
+}
+
+/* ------------------------------------------------------- rounds, bottom-r  */
+
+.ammo-list {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.ammo-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  margin-bottom: 2px;
+  color: var(--bone-dim);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  background: transparent;
+}
+
+.ammo-row .ammo-k {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--grey);
+  border: 2px solid var(--grey);
+  padding: 2px 0;
+}
+
+.ammo-row .ammo-n { text-align: left; }
+
+.ammo-row .ammo-c {
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  text-align: right;
+  color: var(--bone);
+  font-variant-numeric: tabular-nums;
+}
+
+.ammo-row .ammo-c.unlimited {
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+}
+
+.ammo-row.sel {
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ammo-row.sel .ammo-k {
+  color: var(--amber);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.ammo-row.sel .ammo-c { color: var(--ink); }
+.ammo-row.sel .ammo-c.unlimited { color: var(--ink); }
+
+.ammo-row.empty { color: var(--grey); }
+.ammo-row.empty .ammo-c { color: var(--grey); }
+.ammo-row.sel.empty { background: var(--grey); color: var(--ink); }
+.ammo-row.sel.empty .ammo-c { color: var(--ink); }
+
+/* ------------------------------------------------------------------ gauges */
+
+.gauges { display: block; }
+
+.gauge { margin-top: 8px; }
+
+.gauge-lab {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  color: var(--bone-dim);
+  margin-bottom: 4px;
+}
+
+.gauge-lab.ready { color: var(--amber); }
+
+.gauge-lab.over {
+  color: var(--red);
+  animation: blink 0.3s steps(1, end) infinite;
+}
+
+.bar {
+  position: relative;
+  width: 232px;
+  height: 12px;
+  border: 2px solid var(--ink);
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: var(--amber);
+}
+
+.bar.ready .bar-fill { background: var(--bone); }
+.bar.hot .bar-fill { background: var(--red); }
+
+.bar.over .bar-fill {
+  background: var(--red);
+  animation: blink 0.3s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+
+/* ------------------------------------------------------------- the reticle */
+
+.hud-xhair,
+.hud-barrel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  will-change: transform;
+}
+
+.hud-xhair.shown,
+.hud-barrel.shown { display: block; }
+
+.hud-xhair {
+  width: 44px;
+  height: 44px;
+  color: var(--bone);
+}
+
+.hud-xhair.aligned { color: var(--amber); }
+
+.hud-xhair .tick {
+  position: absolute;
+  background: currentColor;
+}
+
+.hud-xhair .tick.t,
+.hud-xhair .tick.b {
+  left: 50%;
+  margin-left: -1.5px;
+  width: 3px;
+  height: 13px;
+}
+
+.hud-xhair .tick.t { top: 0; }
+.hud-xhair .tick.b { bottom: 0; }
+
+.hud-xhair .tick.l,
+.hud-xhair .tick.r {
+  top: 50%;
+  margin-top: -1.5px;
+  height: 3px;
+  width: 13px;
+}
+
+.hud-xhair .tick.l { left: 0; }
+.hud-xhair .tick.r { right: 0; }
+
+.hud-xhair .pip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  background: currentColor;
+}
+
+/* where the gun is actually pointing -- shuts and goes amber when aligned */
+.hud-barrel {
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--grey);
+  border-radius: 50%;
+}
+
+.hud-barrel.aligned {
+  border-color: var(--amber);
+  border-width: 4px;
+  background: transparent;
+}
+
+/* ------------------------------------------------------------- indicators  */
+
+.hud-popups {
+  position: absolute;
+  inset: 0;
+}
+
+.hud-popup {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translate3d(-9999px, -9999px, 0);
+  will-change: transform, opacity;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+}
+
+.hud-popup.loud {
+  font-size: 34px;
+  letter-spacing: 0.22em;
+  -webkit-text-stroke: 4px var(--ink);
+}
+
+.hud-popup.k-ricochet { color: var(--blue); }
+.hud-popup.k-nonpen   { color: var(--grey); font-size: 17px; }
+.hud-popup.k-pen      { color: var(--red); }
+.hud-popup.k-crit     { color: var(--amber); }
+.hud-popup.k-kill     { color: var(--amber); font-size: 24px; }
+.hud-popup.k-damage   { color: var(--bone); font-size: 17px; }
+.hud-popup.k-taken    { color: var(--red); font-size: 22px; }
+
+/* ---------------------------------------------------------------- banner   */
+
+.hud-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24%;
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.hud-banner.live {
+  visibility: visible;
+  animation: banner-in 0.22s steps(4, end) forwards;
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: scale(0.84); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.banner-title {
+  font-weight: 700;
+  font-size: clamp(42px, 8vw, 104px);
+  letter-spacing: 0.1em;
+  line-height: 0.92;
+  color: var(--bone);
+  -webkit-text-stroke: 5px var(--ink);
+  paint-order: stroke fill;
+}
+
+.banner-sub {
+  margin-top: 10px;
+  font-weight: 700;
+  font-size: clamp(12px, 2vw, 20px);
+  letter-spacing: 0.44em;
+  color: var(--amber);
+}
+
+.banner-sub.empty { display: none; }
+
+/* ------------------------------------------------------------ edge flash   */
+
+.hud-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.hud-flash .edge {
+  position: absolute;
+  background: var(--red);
+}
+
+.hud-flash.k-kill .edge { background: var(--amber); }
+
+.hud-flash .edge.t { top: 0; left: 0; right: 0; height: 12px; }
+.hud-flash .edge.b { bottom: 0; left: 0; right: 0; height: 12px; }
+.hud-flash .edge.l { top: 0; bottom: 0; left: 0; width: 12px; }
+.hud-flash .edge.r { top: 0; bottom: 0; right: 0; width: 12px; }
+
+.hud-flash.live { animation: flash-out 0.32s steps(3, end) forwards; }
+
+@keyframes flash-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* -------------------------------------------------------------- game over  */
+
+.hud-over {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--void);
+  pointer-events: auto;
+  z-index: 30;
+}
+
+.hud-over.hidden { display: none; pointer-events: none; }
+.hud-over.live { animation: over-in 0.2s steps(3, end) forwards; }
+
+@keyframes over-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.over-panel {
+  padding: 40px 56px;
+  border: var(--rule) solid var(--red);
+  background: var(--ground);
+  text-align: center;
+  max-width: 92vw;
+}
+
+.over-kicker {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.46em;
+  color: var(--red);
+}
+
+.over-title {
+  margin-top: 12px;
+  font-weight: 700;
+  font-size: clamp(48px, 9vw, 108px);
+  line-height: 0.9;
+  letter-spacing: 0.08em;
+  color: var(--bone);
+}
+
+.over-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  margin: 32px 0;
+  border: 2px solid var(--ink);
+  background: var(--ink);
+}
+
+.over-cell {
+  padding: 14px 16px;
+  background: var(--grid);
+}
+
+.over-lab {
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--bone-dim);
+}
+
+.over-val {
+  margin-top: 8px;
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.over-btn {
+  font: inherit;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  background: var(--amber);
+  border: 0;
+  border-radius: 0;
+  padding: 14px 54px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.over-btn:hover { background: var(--bone); }
+.over-btn:focus-visible { outline: var(--rule) solid var(--bone); outline-offset: 4px; }
+
+/* ----------------------------------------------------------- narrow screens */
+
+@media (max-width: 1200px) {
+  #hud { --m: 26px; --big: 60px; }
+  .bar { width: 196px; }
+  .hull-bar .seg { width: 12px; height: 22px; }
+  .hull-num { font-size: 36px; }
+}
+
+@media (max-width: 900px) {
+  #hud { --m: 18px; --big: 46px; --key: 10px; --meta: 11px; --rule: 2px; }
+  .hud-key { letter-spacing: 0.3em; padding-bottom: 5px; margin-bottom: 7px; }
+  .hud-meta { letter-spacing: 0.18em; margin-top: 6px; }
+  .hull-bar { gap: 2px; padding: 2px; }
+  .hull-bar .seg { width: 9px; height: 18px; }
+  .hull-num { font-size: 28px; }
+  .hull-row { gap: 10px; }
+  .ammo-row { grid-template-columns: 18px 1fr 44px; gap: 7px; font-size: 12px; padding: 3px 4px; }
+  .ammo-row .ammo-k { font-size: 10px; }
+  .ammo-row .ammo-c { font-size: 15px; }
+  .bar { width: 152px; height: 10px; }
+  .gauge-lab { font-size: 9px; letter-spacing: 0.26em; }
+  .hud-popup { font-size: 16px; }
+  .hud-popup.loud { font-size: 26px; }
+  .over-panel { padding: 26px 24px; }
+  .over-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 22px 0; }
+  .over-val { font-size: 26px; }
+  .over-btn { font-size: 18px; padding: 12px 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-bl.low,
+  .hud-bl.critical,
+  .bar.over .bar-fill,
+  .gauge-lab.over { animation: none; }
+}
