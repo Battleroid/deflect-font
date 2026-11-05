@@ -3,11 +3,20 @@ import { HEX, OUTCOME } from './palette.js';
 import { ROUNDS, resolveImpact, deflect, faceOf } from './ballistics.js';
 import { PlayerTank, EnemyTank, Infantry, Shell, wrapAngle } from './entities.js';
 import * as Models from './models.js';
+import { Progression, XP_VALUE } from './progression.js';
 import HUD from './hud.js';
 import Audio from './audio.js';
 
-const ARENA = 220;
+/* 220 was sized for an arena filled out with scatter. With the clutter gone the
+ * deliberate zones only reach about two thirds of the way out, which left a wide
+ * band of bare floor and enemies spawning in the void. Smaller field, same
+ * content: it reads as a place rather than a plain, and the fighting stays close. */
+const ARENA = 170;
 const ARENA_RADIUS = ARENA * 0.47;
+
+/* Base chance a wrecked vehicle leaves a repair kit behind, before SALVAGE CREW. */
+const REPAIR_DROP = 0.09;
+const REPAIR_AMOUNT = 5;
 
 /* Enemy value, used to budget a wave. Infantry are cheap and come in crowds. */
 const COST = { light: 1, medium: 2, heavy: 4, infantry: 0.5 };
@@ -23,6 +32,8 @@ export class Game {
     this.fx = new Models.FxPool(scene);
 
     this.arenaRadius = ARENA_RADIUS;
+    this.bounds = ARENA_RADIUS;        // square half-extent; set properly in build()
+    this.prog = new Progression();
     this.obstacles = [];
     this.enemies = [];
     this.infantry = [];
@@ -51,6 +62,11 @@ export class Game {
      * separate, because a tank can shoot over dragon's teeth and sandbags but not
      * through a blast wall -- which is what makes a low obstacle worth sitting
      * behind. Anything that does not declare a height is assumed tall. */
+    /* The arena is a square with a kerb. Take the playable half-extent from it
+     * rather than inventing a radius, or the hull stops short of the wall and
+     * the corners become unreachable floor. */
+    this.bounds = this.arena.userData.playable ?? ARENA_RADIUS;
+
     this.obstacles = (this.arena.userData.obstacles || []).map((o) => ({
       x: o.x, z: o.z, radius: o.radius,
       solid: o.solid !== false,
@@ -83,11 +99,25 @@ export class Game {
     this.player.reload = 1;
     this.player.mgHeat = 0;
     this.player.mgOverheated = false;
-    for (const r of ROUNDS) this.player.ammo[r.key] = r.start;
+    this.prog.reset();
+    this.player.base.maxHp = 100;
+    this.player.maxHp = 100;
+    this.player.hp = 100;
+    this.player.applyUpgrades(this.prog.stats);
+    this._refillAmmo();
     this.clearAll();
+    HUD.hideLevelUp();
     HUD.clear();
     HUD.banner('STAND BY', 'WAVE 1 INBOUND', 2200);
     Audio.engineStart();
+  }
+
+  /** Top every rack back up, scaled by any EXTENDED RACKS ranks. */
+  _refillAmmo() {
+    const mul = this.prog.stats.ammoMul;
+    for (const r of ROUNDS) {
+      this.player.ammo[r.key] = Math.round(r.start * mul);
+    }
   }
 
   clearAll() {
@@ -140,10 +170,16 @@ export class Game {
     this._muzzle(m, dirX, dirZ, round.key === 'HE' ? 1.15 : 1);
     this.shake(round.key === 'HE' ? 0.5 : 0.36);
 
-    // canister throws a cone of pellets; everything else is one shot
-    const n = round.pellets || 1;
+    // canister throws a cone of pellets; everything else is one shot, plus
+    // whatever MULTI-ROUND has added, fanned just wide enough to read as several
+    const extra = this.prog.stats.extraShells;
+    const n = (round.pellets || 1) + extra;
+    const fan = round.spreadDeg ? round.spreadDeg : (extra ? 3.4 : 0);
     for (let i = 0; i < n; i++) {
-      const spread = round.spreadDeg ? (Math.random() - 0.5) * round.spreadDeg * Math.PI / 180 : 0;
+      const spread = fan
+        ? (n === 1 ? 0 : (i / (n - 1) - 0.5) * 2) * fan * Math.PI / 180
+          + (round.spreadDeg ? (Math.random() - 0.5) * 0.02 : 0)
+        : 0;
       const a = p.turret + spread;
       this.shells.push(new Shell({
         x: m.x, y: m.y, z: m.z,
@@ -169,7 +205,7 @@ export class Game {
       x: m.x, y: m.y - 0.2, z: m.z,
       dirX: Math.sin(a), dirZ: Math.cos(a),
       speed: 190, life: 0.7,
-      round: { key: 'MG', name: 'MG', pen: 18, damage: 4, canRicochet: true, ricochetDeg: 60, tracerLen: 2.4 },
+      round: { key: 'MG', name: 'MG', pen: 18, damage: 4, canRicochet: true, ricochetDeg: 34, tracerLen: 2.4 },
       from: p, friendly: true, isMG: true,
     }));
   }
@@ -186,7 +222,7 @@ export class Game {
       speed: 95,
       round: {
         key: 'ENEMY', name: 'AP', pen: enemy.spec.pen, damage: enemy.spec.damage,
-        canRicochet: true, ricochetDeg: 68, tracerLen: 4,
+        canRicochet: true, ricochetDeg: 38, tracerLen: 4,
       },
       from: enemy, friendly: false,
     }));
@@ -293,11 +329,24 @@ export class Game {
         this.fx.spark(ent.hitPoint, new THREE.Vector3(0, 1, 0), HEX.amber, 14);
         this._popup(point, 'TRACKED', 'crit');
       }
+      // EXPLOSIVE TIPS: every coax round becomes a tiny bomb
+      const boom = this.prog.stats.mgExplode;
+      if (boom > 0) {
+        this.fx.spark(point, new THREE.Vector3(0, 1, 0), HEX.amber, 4);
+        if (ent.takeDamage(boom)) { this._killVehicle(ent, point); return; }
+      }
       if (chip > 0 && ent.takeDamage(chip)) this._killVehicle(ent, point);
       return;
     }
 
-    const res = resolveImpact(shell.round, ent.armour, ent.heading, shell.dirX, shell.dirZ);
+    const up = this.prog.stats;
+    const mods = shell.friendly
+      ? { penMul: up.penMul, dmgMul: up.dmgMul,
+          noRicochet: up.apNoRicochet && shell.round.key === 'AP' }
+      // being shot at: our own plate is thicker and slopes better
+      : { armourMul: up.armourMul, ricochetDegDelta: up.ricochetDegDelta };
+    const res = resolveImpact(shell.round, ent.armour, ent.heading,
+                              shell.dirX, shell.dirZ, Math.random, mods);
     const scale = shell.damageScale || 1;
     const dmg = Math.round(res.damage * scale);
 
@@ -334,9 +383,30 @@ export class Game {
       } else {
         this._popup(point, crit ? `${OUTCOME.crit.label} ${dmg}` : String(dmg), crit ? 'crit' : 'pen');
         if (ent.takeDamage(dmg)) this._killVehicle(ent, point);
+        else if (up.splitCount > 0 && shell.friendly && !shell.isSplinter) {
+          this._split(point, shell, up.splitCount);
+        }
       }
     }
     if (shell.round.splash) this._splash(point, shell);
+  }
+
+  /** SPLIT ON HIT: a penetration throws fragments back out at the neighbours. */
+  _split(point, shell, count) {
+    const base = Math.atan2(shell.dirX, shell.dirZ);
+    for (let i = 0; i < count; i++) {
+      const a = base + (i / count - 0.5) * 2.4 + (Math.random() - 0.5) * 0.3;
+      this.shells.push(new Shell({
+        x: point.x, y: point.y, z: point.z,
+        dirX: Math.sin(a), dirZ: Math.cos(a),
+        speed: 110, life: 0.55, friendly: true, from: shell.from, isSplinter: true,
+        damageScale: 0.45,
+        round: {
+          key: 'FRAG', name: 'FRAG', pen: 70, damage: 10,
+          canRicochet: false, ricochetDeg: 999, tracerLen: 2,
+        },
+      }));
+    }
   }
 
   _splash(point, shell) {
@@ -367,6 +437,7 @@ export class Game {
     const p = this.player;
     if (p.invuln > 0) return;
     p.invuln = 0.12;
+    dmg = Math.max(1, Math.round(dmg * this.prog.stats.damageTakenMul));
     p.takeDamage(dmg);
     Audio.play('hitTaken', { gain: 0.8 });
     HUD.flash('taken');
@@ -375,10 +446,20 @@ export class Game {
     if (p.hp <= 0) this.gameOver();
   }
 
+  /** XP, and the occasional repair kit left in the wreckage. */
+  _award(kind, ent) {
+    this.prog.addXp(XP_VALUE[kind] || 5);
+    if (kind === 'infantry') return;
+    if (Math.random() < REPAIR_DROP * this.prog.stats.dropMul) {
+      this._dropPickup(ent.x, ent.z, 'repair');
+    }
+  }
+
   _killVehicle(ent, point) {
     ent.dead = true;
     this.kills += 1;
     this.score += ent.score || 100;
+    this._award(ent.variant, ent);
     const big = ent.variant === 'heavy';
     this.fx.explosion(ent.hitPoint, big ? 2.0 : 1.3);
     this.fx.scorch(ent.position, big ? 1.6 : 1.2);
@@ -394,6 +475,7 @@ export class Game {
     ent.dead = true;
     this.kills += 1;
     this.score += ent.score;
+    this._award('infantry', ent);
     Audio.play('infantryDie', { gain: 0.6, pan: this._panOf(ent.x) });
     this.fx.spark(point, new THREE.Vector3(0, 1, 0), HEX.amber, 8);
   }
@@ -501,10 +583,15 @@ export class Game {
   _dropCrate() {
     const a = Math.random() * Math.PI * 2;
     const r = 18 + Math.random() * (this.spawnRing - 30);
+    this._dropPickup(Math.sin(a) * r, Math.cos(a) * r, 'supply');
+  }
+
+  _dropPickup(x, z, kind) {
     const g = Models.createSupplyCrate();
-    g.position.set(Math.sin(a) * r, 0, Math.cos(a) * r);
+    if (kind === 'repair') g.scale.setScalar(0.62);   // a kit, not a pallet
+    g.position.set(x, 0, z);
     this.scene.add(g);
-    this.crates.push({ group: g, x: g.position.x, z: g.position.z, spin: 0 });
+    this.crates.push({ group: g, x, z, spin: Math.random() * 6, kind });
   }
 
   // -- the frame -----------------------------------------------------------
@@ -561,7 +648,7 @@ export class Game {
       if (Math.hypot(c.x - this.player.x, c.z - this.player.z) < this.player.radius + 1.8) {
         this.scene.remove(c.group);
         this.crates.splice(i, 1);
-        this._collect();
+        this._collect(c.kind);
       }
     }
 
@@ -584,11 +671,17 @@ export class Game {
     }
   }
 
-  _collect() {
+  _collect(kind) {
     Audio.play('pickup');
     const p = this.player;
+    if (kind === 'repair') {
+      p.hp = Math.min(p.maxHp, p.hp + REPAIR_AMOUNT);
+      this._popup(p.hitPoint, `+${REPAIR_AMOUNT}`, 'kill');
+      return;
+    }
+    const mul = this.prog.stats.ammoMul;
     for (const r of ROUNDS) {
-      p.ammo[r.key] = Math.min(r.max, p.ammo[r.key] + Math.ceil(r.start * 0.5));
+      p.ammo[r.key] = Math.min(Math.round(r.max * mul), p.ammo[r.key] + Math.ceil(r.start * 0.5));
     }
     p.hp = Math.min(p.maxHp, p.hp + 25);
     HUD.banner('RESUPPLY', 'AMMUNITION AND REPAIRS', 1200);
@@ -608,7 +701,13 @@ export class Game {
       if (left === 0) {
         this.score += 150 + this.wave * 60;
         Audio.play('waveClear');
-        HUD.banner(`WAVE ${this.wave} CLEAR`, `+${150 + this.wave * 60}`, 1700);
+        // racks topped up and a little welding done between waves, so running
+        // dry or limping is a problem for this wave rather than for the run
+        this._refillAmmo();
+        const healed = Math.min(10, this.player.maxHp - this.player.hp);
+        this.player.hp += healed;
+        HUD.banner(`WAVE ${this.wave} CLEAR`,
+                   `REARMED${healed > 0 ? `  /  +${healed} HULL` : ''}`, 1700);
         this.state = 'intermission';
         this.stateTimer = 4.2;
         if (this.wave % 2 === 0) { this._dropCrate(); this._dropCrate(); }
@@ -645,6 +744,21 @@ export class Game {
       round: p.round.key, ammo: p.ammo,
       reload: p.reload, mgHeat: p.mgHeat, mgOverheated: p.mgOverheated,
       enemiesLeft: this.enemiesLeft,
+      xp: this.prog.xp, xpNext: this.prog.xpNext, level: this.prog.level,
+      taken: this.prog.takenList(),
     };
+  }
+
+  /** Spend one pending level, if the modal is not already up. */
+  offerLevelUp() {
+    if (this.prog.pending <= 0 || HUD.levelUpOpen) return;
+    const choices = this.prog.rollChoices(3);
+    if (!choices.length) { this.prog.pending = 0; return; }
+    Audio.play('waveClear', { gain: 0.6 });
+    HUD.showLevelUp(this.prog.level, choices, (id) => {
+      this.prog.take(id);
+      this.player.applyUpgrades(this.prog.stats);
+      Audio.play('select');
+    });
   }
 }

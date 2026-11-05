@@ -721,6 +721,122 @@ export function createObservationPost() {
 }
 
 /**
+ * BUILDINGS -- the handful of utilitarian concrete structures a Warsaw Pact
+ * gunnery range was given and then never maintained. Single-storey, flat-roofed,
+ * poured in bays, unpainted apart from a stencilled number. They are the biggest
+ * solid things on the map and the roof is well over 1.6, so they stop a shot.
+ *
+ * The camera looks straight down, so the ROOF *is* the building: every one of
+ * them is a plain box with all of its interest on top -- bay seams, vents, a
+ * hatch, a painted stripe and a number.
+ *
+ *   shed      small, one vent, one door
+ *   barracks  long and narrow, a row of vents down the roof
+ *   bunker    low and thick, bermed skirt, embrasure slits, heavy roof slab
+ *   garage    squat and wide, three vehicle doors on one long side
+ *
+ * Length runs along local +X and depth along local +Z, the same convention as
+ * every other run of scenery here, so a placed building lines up with the range.
+ */
+const BUILDING = {
+  shed:     { len: 9.0,  dep: 7.0,  wall: 2.9, roof: 0.30 },
+  barracks: { len: 18.0, dep: 7.5,  wall: 3.3, roof: 0.30 },
+  bunker:   { len: 11.0, dep: 9.0,  wall: 2.3, roof: 0.55 },
+  garage:   { len: 14.0, dep: 11.0, wall: 3.8, roof: 0.34 },
+};
+
+/** One seven-segment digit, painted flat on a roof so it reads from above. */
+function paintDigit(parent, d, x, y, z, s) {
+  const w = s * 0.62, h = s, t = s * 0.17;
+  const bars = {
+    a: [0, -h / 2, w, t], g: [0, 0, w, t], d: [0, h / 2, w, t],
+    f: [-w / 2, -h / 4, t, h / 2], b: [w / 2, -h / 4, t, h / 2],
+    e: [-w / 2, h / 4, t, h / 2], c: [w / 2, h / 4, t, h / 2],
+  };
+  const lit = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc',
+               'abc', 'abcdefg', 'abcdfg'][d % 10];
+  for (const k of lit) {
+    const [bx, bz, bw, bd] = bars[k];
+    paint(parent, fbox(bw, 0.02, bd), CONCRETE, x + bx, y, z + bz);
+  }
+}
+
+/** A stencilled unit number, centred on x. */
+function paintNumber(parent, n, x, y, z, s) {
+  const digits = String(n).split('').map(Number);
+  const step = s * 0.84;
+  const x0 = x - ((digits.length - 1) * step) / 2;
+  for (let i = 0; i < digits.length; i++) paintDigit(parent, digits[i], x0 + i * step, y, z, s);
+}
+
+export function createBuilding(kind = 'shed', seed = 1) {
+  const spec = BUILDING[kind] || BUILDING.shed;
+  const rnd = mulberry32(seed);
+  const L = spec.len, D = spec.dep, H = spec.wall;
+  const g = scenic(Math.hypot(L, D) / 2 + 0.6);
+  g.userData.hull = { length: D, width: L, height: H + spec.roof };
+
+  const top = H + spec.roof;          // the only surface the player ever sees
+  const pz = top + 0.012;             // paint sits just proud of the roof slab
+
+  at(g, fbox(L + 1.6, 0.12, D + 1.6), EARTH, 0, 0, 0);          // mud apron
+  at(g, fbox(L, H, D), CONCRETE, 0, 0, 0);                      // the box itself
+  at(g, fbox(L + 0.5, spec.roof, D + 0.5), EARTH, 0, H, 0);     // overhanging roof
+
+  // the roof was poured in bays: draw the bay seams and the ridge joint
+  const bays = Math.max(2, Math.round(L / 3.2));
+  for (let i = 1; i < bays; i++) {
+    paint(g, fbox(0.12, 0.02, D + 0.3), HEX.ground, -L / 2 + (L * i) / bays, pz, 0);
+  }
+  paint(g, fbox(L + 0.5, 0.02, 0.12), HEX.ground, 0, pz, 0);
+
+  // a roof hatch and a painted stripe, on every one of them
+  at(g, fbox(1.1, 0.22, 1.1), CHAR, -L / 2 + 1.9, top, D / 2 - 1.7);
+  paint(g, fbox(L * 0.62, 0.02, 0.34), CONCRETE, 0, pz, -D / 2 + 0.9);
+
+  /** boxed fan housing with a dark grille on top */
+  const vent = (vx, vz, w) => {
+    at(g, fbox(w, 0.5, w), HEX.grey, vx, top, vz);
+    paint(g, fbox(w - 0.3, 0.02, w - 0.3), CHAR, vx, top + 0.51, vz);
+  };
+
+  if (kind === 'barracks') {
+    for (let i = 0; i < 4; i++) vent(-L / 2 + L * (0.18 + i * 0.215), 0.5, 1.1);
+    for (const s of [-1, 1]) at(g, fbox(1.1, 2.1, 0.16), CHAR, s * L * 0.34, 0, D / 2);
+    paint(g, fbox(L - 1.0, 0.02, 0.18), CONCRETE, 0, pz, D / 2 - 1.0);
+  } else if (kind === 'garage') {
+    for (let i = -1; i <= 1; i++) {
+      at(g, fbox(3.4, H - 0.5, 0.2), CHAR, i * 4.3, 0, D / 2);            // vehicle door
+      at(g, fbox(3.8, 0.35, 0.3), CONCRETE, i * 4.3, H - 0.5, D / 2);     // lintel
+      paint(g, fbox(3.4, 0.02, 1.3), HEX.ground, i * 4.3, 0.02, D / 2 + 1.2);
+    }
+    vent(-3.0, -D / 2 + 2.2, 1.5);
+    vent(3.0, -D / 2 + 2.2, 1.5);
+  } else if (kind === 'bunker') {
+    at(g, berm(L + 3.2, D + 3.2, 1.0, 0.86), EARTH, 0, 0, 0);             // bermed skirt
+    for (const s of [-1, 1]) at(g, fbox(2.2, 0.3, 0.18), CHAR, s * L * 0.22, H - 0.75, D / 2);
+    at(g, fbox(0.18, 0.3, 2.2), CHAR, -L / 2, H - 0.75, 0);               // embrasures
+    at(g, pillar(0.75, 0.82, 0.3, 8), HEX.grey, 0, top, 0);               // cupola hatch
+    vent(L / 2 - 1.8, -D / 2 + 1.8, 0.9);
+  } else {   // shed
+    vent(0.4, 0.4, 1.0);
+    at(g, fbox(1.0, 2.0, 0.16), CHAR, L * 0.22, 0, D / 2);
+  }
+
+  paintNumber(g, 1 + Math.floor(rnd() * 98), -L / 2 + 2.6, pz, -D / 2 + 2.7, 1.7);
+
+  /* Solid, and tall enough to block line of sight. Several circles walked along
+   * the footprint, so the collision shape is a stadium that actually fits a
+   * rectangle instead of one fat circle swallowing the ground around it. */
+  const r = (D / 2) * 1.04;
+  const steps = Math.max(2, Math.ceil((L - 2 * r) / (r * 1.1)) + 1);
+  for (let i = 0; i < steps; i++) {
+    obst(g, -L / 2 + r + ((L - 2 * r) * i) / (steps - 1), 0, r, true, top);
+  }
+  return g;
+}
+
+/**
  * CHAIN-LINK FENCE -- posts and wire drawn as plain dim line segments, with a
  * torn-open gap. Not solid: a tank drives straight through it, but it reads as
  * a boundary and clutters the sightline.
@@ -842,7 +958,12 @@ export function createSupplyCrate() {
  * ================================================================== */
 
 const CENTRE_CLEAR = 18;    // the player starts here: never build inside it
-const COVER_TARGET = 0.20;  // roughly how much of the floor has something on it
+/* Shell holes are the one thing with a hard budget. A field of overlapping
+ * craters reads as noise rather than as shelling, so there are few of them,
+ * they vary in size, and -- outside the aiming point of one beaten zone -- no
+ * two rims are allowed to touch. Coverage is whatever that happens to give. */
+const CRATER_MIN = 18, CRATER_MAX = 26;
+const CRATER_GAP = 2.2;     // clear ground required between two crater rims
 /* A tank is 3.3 wide and 6.6 long and turns on its tracks, so it needs room to
  * manoeuvre rather than a slot to thread. No two solid set pieces may leave a
  * gap narrower than this between them; the arena enforces it by pruning. */
@@ -868,6 +989,10 @@ const RADIUS = {
   fenceRun: (len) => (Math.max(2, Math.round(len / 2.6)) * 2.6) / 2 + 0.5,
   sandbagNest: () => 2.4,
   observationPost: () => 2.4,
+  building: (kind) => {
+    const s = BUILDING[kind] || BUILDING.shed;
+    return Math.hypot(s.len, s.dep) / 2 + 0.6;
+  },
 };
 
 /** Rotate a piece's local obstacle into world space and record it. */
@@ -889,18 +1014,19 @@ function stamp(out, piece, x, z, ry) {
  *
  * A seeded Cold War gunnery range, laid out in zones that make sense together
  * rather than as a scatter of props: a firing line with its revetted bays,
- * painted apron and observation tower; the stores dump behind it; an impact
- * area of craters and burnt-out target hulks downrange; anti-tank belts of
- * dragon's teeth cutting across at an angle; and hedgerows along the old field
- * boundaries. The whole layout is rotated by a seeded angle.
+ * painted apron and observation tower; the stores dump behind it with a couple
+ * of concrete buildings; an impact area of craters and burnt-out target hulks
+ * downrange; anti-tank belts of dragon's teeth cutting across at an angle; and
+ * hedgerows along the old field boundaries. The whole layout is rotated by a
+ * seeded angle.
  *
  * Hard rules, in order of priority:
  *   1. the central CENTRE_CLEAR-radius disc stays completely empty (player spawn)
  *   2. no two solid set pieces leave a gap narrower than MIN_GAP, so the player
  *      can always manoeuvre -- enforced by pruning after everything is placed
  *   3. every anti-tank belt is broken by openings, never a wall across the map
- *   4. only then, fill toward COVER_TARGET, and only with craters, which a tank
- *      drives straight through
+ *   4. craters are budgeted and spaced, not poured to hit a coverage figure:
+ *      empty ground is what makes the set pieces read
  *
  * Returns, on userData:
  *   obstacles  [{ x, z, radius, solid, height }]  for collision + AI pathing
@@ -1138,6 +1264,59 @@ export function createArena(size = 150, seed = 1) {
             (l, i) => createFenceRun(l, (seed * 104729 + i * 59) >>> 0), 'dump', 2);
   }
 
+  /* --- ZONE 2b: the buildings --------------------------------------- *
+   * Two to four concrete structures: the biggest things on the map, so they go
+   * where a range would have put them -- outboard of the firing line, in the
+   * stores area behind the screen, or as an isolated outbuilding on a flank --
+   * and never near the middle. They are placed BEFORE the belts and hedgerows,
+   * at the observation post's priority, so they are never the piece that gets
+   * pruned; a belt that would run within MIN_GAP of one simply stops short,
+   * which keeps every lane and every belt opening as wide as it looks.         */
+
+  {
+    const sites = [];
+    // outboard of the bays at either end of the firing line
+    for (const s of [-1, 1]) {
+      sites.push([FL + range(rnd, 1, 9), s * (lineHalf + range(rnd, 24, 32))]);
+    }
+    // in the stores area, downrange of the blast-wall screen
+    sites.push([FL + range(rnd, 22, 30), -postSide * (lineHalf + range(rnd, 8, 18))]);
+    // behind the firing line, off to one side of the apron
+    sites.push([FL - range(rnd, 9, 14), range(rnd, -0.6, 0.6) * lineHalf]);
+    // isolated outbuildings, well out on the flanks and clear of the centre
+    for (let i = 0; i < 8; i++) {
+      sites.push([limit * range(rnd, -0.55, 0.3),
+                  limit * range(rnd, 0.44, 0.78) * (rnd() < 0.5 ? -1 : 1)]);
+    }
+
+    const kinds = ['garage', 'barracks', 'bunker', 'shed'];
+    const kind0 = Math.floor(rnd() * 4);
+    const want = 2 + Math.floor(rnd() * 3);
+    let built = 0;
+    for (let i = 0; i < sites.length && built < want; i++) {
+      const kind = kinds[(kind0 + built) % kinds.length];
+      const bs = (seed * 2971215073 + i * 193) >>> 0;
+      const ry = range(rnd, -0.22, 0.22);
+      if (putL(RADIUS.building(kind), () => createBuilding(kind, bs),
+               sites[i][0], sites[i][1], ry, `bldg${built}`, 5)) built++;
+    }
+
+    /* On a small map the firing line itself barely fits and every sensible site
+     * can fall outside the buildable ring, so fall back to an outbuilding on a
+     * flank: the smaller kinds only, still well off the centre, still MIN_GAP
+     * clear of everything already standing. */
+    for (let i = 0; i < 40 && built < 2; i++) {
+      const kind = i % 2 ? 'bunker' : 'shed';
+      const r = RADIUS.building(kind);
+      const lo = CENTRE_CLEAR + r + 8, hi = Math.max(lo + 1, limit - r);
+      const a = range(rnd, 0, Math.PI * 2);
+      const d = range(rnd, lo, hi);
+      const bs = (seed * 40503 + i * 751) >>> 0;
+      if (put(r, () => createBuilding(kind, bs), Math.cos(a) * d, Math.sin(a) * d,
+              rnd() * Math.PI * 2, `bldg${built}`, 5)) built++;
+    }
+  }
+
   /* --- ZONE 3: anti-tank belts ------------------------------------- *
    * Continuous staggered teeth poured in long lines across the middle at an
    * angle to the range axis, anchored at the outer end and capped with a
@@ -1230,25 +1409,52 @@ export function createArena(size = 150, seed = 1) {
 
   /* --- ZONE 5: the impact area ------------------------------------- *
    * Shells land where people shoot, so the craters pile up downrange of the
-   * firing line: dense in the middle of the beaten zone, thinning at the
-   * edges. The wrecks were the targets, so they sit in it. Craters are not
-   * solid, so they may overlap each other and never block a lane.            */
+   * firing line, concentrated in one or two beaten zones. The wrecks were the
+   * targets, so they sit in it.
+   *
+   * There are deliberately FEW holes and they are kept off each other: a
+   * crater is only dug where its lip clears every other lip by CRATER_GAP,
+   * otherwise it is skipped. The one exception is the aiming point in the
+   * middle of the first beaten zone, where two or three rounds are allowed to
+   * land on top of each other -- which is what a beaten zone looks like.      */
 
+  const craterCap = CRATER_MIN + Math.floor(rnd() * (CRATER_MAX - CRATER_MIN + 1));
+  const craters = [];                 // { x, z, r } of every hole actually dug
+
+  /** A few big ones, rather more small ones -- not a field of mid-sized dents. */
+  const craterRadius = () => (rnd() < 0.2 ? range(rnd, 3.4, 5.0) : range(rnd, 1.3, 2.6));
+
+  const putCrater = (x, z, rad, group, piled = false) => {
+    if (craters.length >= craterCap) return null;
+    const r = rad * 1.2;              // the thrown-up lip, not the hole
+    if (!piled) {
+      for (const c of craters) {
+        if (Math.hypot(c.x - x, c.z - z) - c.r - r < CRATER_GAP) return null;
+      }
+    }
+    const rec = put(RADIUS.crater(rad), () => createCrater(rad), x, z,
+                    range(rnd, 0, 3), group, 1);
+    if (rec) craters.push({ x, z, r });
+    return rec;
+  };
+
+  const STRAYS = 3;                   // holes held back for the rounds that fell wide
   const impactCount = rnd() < 0.55 ? 2 : 1;
-  const impactSpots = [];
   for (let k = 0; k < impactCount; k++) {
     const iF = limit * range(rnd, 0.26, 0.52);
     const iC = (k === 0 ? 1 : -1) * limit * range(rnd, 0.02, 0.3);
     const iR = range(rnd, 20, 28) * (k === 0 ? 1 : 0.75);
-    impactSpots.push([iF, iC, iR]);
 
-    const holes = Math.round(range(rnd, 14, 22) * (k === 0 ? 1 : 0.7));
-    for (let i = 0; i < holes; i++) {
+    const share = impactCount === 1 ? 1 : (k === 0 ? 0.62 : 0.38);
+    const want = Math.round((craterCap - STRAYS) * share);
+    let holes = 0;
+    for (let i = 0; i < want * 8 && holes < want; i++) {
       const a = range(rnd, 0, Math.PI * 2);
-      const d = iR * rnd() ** 1.7;                 // crowd the middle
-      const rad = range(rnd, 1.5, 3.8) * (1 - 0.4 * (d / iR));
-      putL(RADIUS.crater(rad), () => createCrater(rad),
-           iF + Math.cos(a) * d, iC + Math.sin(a) * d, range(rnd, 0, 3), `impact${k}`, 1);
+      const d = iR * rnd() ** 1.5;                 // crowd the middle
+      const rad = craterRadius() * (1 - 0.18 * (d / iR));
+      const piled = k === 0 && holes < 3 && d < iR * 0.3;    // the aiming point
+      const [cx, cz] = toWorld(iF + Math.cos(a) * d, iC + Math.sin(a) * d);
+      if (putCrater(cx, cz, rad, `impact${k}`, piled)) holes++;
     }
 
     const hulks = 1 + Math.floor(rnd() * 3);
@@ -1265,12 +1471,11 @@ export function createArena(size = 150, seed = 1) {
   /* --- strays ------------------------------------------------------ *
    * A few shells fell short or wide, and one hulk was towed off and left.    */
 
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 24 && craters.length < craterCap; i++) {
     const a = range(rnd, 0, Math.PI * 2);
-    const d = range(rnd, CENTRE_CLEAR + 6, limit - 6);
-    const rad = range(rnd, 1.3, 2.4);
-    put(RADIUS.crater(rad), () => createCrater(rad),
-        Math.cos(a) * d, Math.sin(a) * d, range(rnd, 0, 3), `stray${i}`, 1);
+    const d = range(rnd, CENTRE_CLEAR + 8, limit - 8);
+    const rad = rnd() < 0.25 ? range(rnd, 3.0, 4.2) : range(rnd, 1.3, 2.4);
+    putCrater(Math.cos(a) * d, Math.sin(a) * d, rad, `stray${i}`);
   }
   {
     const a = range(rnd, 0, Math.PI * 2);
@@ -1346,54 +1551,16 @@ export function createArena(size = 150, seed = 1) {
     }
   }
 
-  /* --- decoration ---------------------------------------------------- *
-   * Everything from here down is scenery: shell holes, drum stacks, sandbags,
-   * crates, rubble. None of it is solid, so none of it can narrow a lane or
-   * give the AI something to grind against -- which means we can be generous
-   * with it, and it is what carries the range up to COVER_TARGET. It is only
-   * kept out of the solids themselves, so nothing sits inside a wall.        */
+  /* --- no coverage top-up ------------------------------------------- *
+   * There used to be a loop here that poured craters, drum stacks, sandbags,
+   * rocks and crates over the map until builtUp/area reached a coverage
+   * target. It read as a bin of props tipped over the range. Coverage is now
+   * simply whatever the deliberate zones produce -- still reported, never
+   * steered by -- and every piece of clutter belongs to a zone that explains
+   * it: drums and crates in the stores dump, sandbags around the firing line
+   * and the tower, craters in the beaten zones. Empty ground in between is
+   * what makes the set pieces read.                                          */
 
-  const clearOfSolids = (x, z, r) => {
-    for (const o of solids) if (Math.hypot(o.x - x, o.z - z) < o.radius + r + 0.5) return false;
-    return true;
-  };
-
-  const deco = (radius, build, x, z, ry) => {
-    if (!inBounds(x, z, radius) || !clearOfSolids(x, z, radius)) return false;
-    const rec = put(radius, build, x, z, ry, 'deco', 0);
-    if (!rec) return false;
-    builtUp += Math.PI * radius * radius;
-    for (const o of rec.obs) obstacles.push(o);
-    return true;
-  };
-
-  for (let i = 0; i < 400 && builtUp / area < COVER_TARGET; i++) {
-    // mostly in the impact areas and around the set pieces, some of it loose
-    let x, z;
-    if (impactSpots.length && i % 3 !== 2) {
-      const [iF, iC, iR] = impactSpots[i % impactSpots.length];
-      const a = range(rnd, 0, Math.PI * 2), d = iR * range(rnd, 0.15, 1.35);
-      [x, z] = toWorld(iF + Math.cos(a) * d, iC + Math.sin(a) * d);
-    } else {
-      const a = range(rnd, 0, Math.PI * 2), d = range(rnd, CENTRE_CLEAR + 4, limit - 4);
-      x = Math.cos(a) * d; z = Math.sin(a) * d;
-    }
-    const s = (seed * 2654435761 + i * 2246822519) >>> 0;
-    const roll = rnd();
-    if (roll < 0.52) {
-      const rad = range(rnd, 1.4, 3.4);
-      deco(RADIUS.crater(rad), () => createCrater(rad), x, z, range(rnd, 0, 3));
-    } else if (roll < 0.68) {
-      const n = 3 + Math.floor(rnd() * 5);
-      deco(RADIUS.fuelDrums(), () => createFuelDrums(n), x, z, range(rnd, 0, 3));
-    } else if (roll < 0.82) {
-      deco(RADIUS.sandbagNest(), createSandbagNest, x, z, range(rnd, 0, Math.PI * 2));
-    } else if (roll < 0.92) {
-      deco(1.6, () => createScenery('rock', s), x, z, range(rnd, 0, 3));
-    } else {
-      deco(1.6, () => createScenery('crate', s), x, z, range(rnd, 0, 3));
-    }
-  }
   /* The range is static and runs to a few thousand nodes, so compose every
    * local matrix once and then stop three.js recomposing them every frame. The
    * order matters: update first (while matrixAutoUpdate is still on), freeze

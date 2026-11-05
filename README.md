@@ -24,6 +24,7 @@ Published to the `gh-pages` branch by `sh tools/publish_pages.sh` from the repo 
 | right click | coax machine gun (it overheats) |
 | `1` `2` `3` `4` | AP / HE / HEAT / CANISTER |
 | `space` | brake |
+| `1` `2` `3` on level up | take that upgrade |
 | `M` | mute |
 | `Esc` or `P` | pause |
 
@@ -47,12 +48,30 @@ shaped charge and ignores the angle entirely. Angling your own hull works the sa
 in reverse, which is why the camera is tilted enough to show you which way you are
 facing.
 
+The bounce zone is the **corner** between two faces, roughly 35–50° off a plate.
+Enemies know it: a heavy holding station angles its hull 45° to you, so AP skips
+off its glacis until you work round the side. Loading HEAT, or taking APFSDS,
+answers that.
+
 | Round | Pen | Damage | Notes |
 |---|---|---|---|
 | AP | 165 | 30 | Fast, flat, ricochets past 66° |
 | HE | 45 | 20 | Splash; good against infantry and tracks |
 | HEAT | 240 | 38 | Never ricochets; the answer to heavies |
 | CANISTER | 14 | 11 × 11 | A cone of pellets; shreds infantry, useless on armour |
+
+## The run
+
+Kills feed an experience bar; every level stops the fight and offers three cards.
+Commons are the dials — reload, traverse, speed, coolant, armour, penetration.
+Rares are the toys: MULTI-ROUND adds a shell to every shot, SPLIT ON HIT throws
+fragments out of a penetration, EXPLOSIVE TIPS turns each coax round into a small
+bomb. Epics bend a run: APFSDS stops AP ever skipping, REVOLVER BREECH cuts a third
+off the reload, SPALL LINER takes a quarter off everything that gets through.
+
+Clearing a wave rearms you completely and welds 10 hull back on, so running dry is
+a problem for this wave rather than for the run. Wrecks occasionally leave a repair
+kit worth 5 hull — more often with SALVAGE CREW.
 
 ## Files
 
@@ -62,6 +81,8 @@ facing.
 | `js/game.js` | world, waves, shell casting, impact resolution |
 | `js/entities.js` | player, enemy AI, infantry, shells |
 | `js/ballistics.js` | rounds, armour, the penetration model |
+| `js/progression.js` | experience, levels, the upgrade draft |
+| `js/optimize.js` | welds the static arena into a few draw calls |
 | `js/models.js` | every mesh, and the procedural arena |
 | `js/hud.js` `js/hud.css` | the overlay, crosshair and hit indicators |
 | `js/audio.js` | procedural 8-bit sound, synthesised at runtime |

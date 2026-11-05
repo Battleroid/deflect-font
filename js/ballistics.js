@@ -4,6 +4,18 @@
  * does not simply do less damage -- it skips off and leaves nothing behind but a
  * blue RICOCHET and the knowledge that you should have flanked. The maths:
  *
+ * A note on the angles, because they are easy to get wrong. `faceOf` splits the
+ * bearing into front (within 50 degrees of the nose), rear, and side, and reports
+ * obliquity against THAT face's normal. The construction caps obliquity at 50
+ * degrees: a shot can never arrive more than 50 off any face normal, because past
+ * that it is striking the next face closer to square. Ricochet thresholds must
+ * therefore live below 50. They were originally written as 66-80, as though
+ * obliquity ran to 90, which meant no shot in the game could ever ricochet --
+ * the thresholds were unreachable and the whole mechanic was dead.
+ *
+ * The bounce zone is the corner between two faces, around 38-50 degrees, which is
+ * also where it belongs physically: that is where a plate is most slanted to you.
+ *
  *   1. Work out which face was struck, from the angle between the shell's travel
  *      and the target's facing. Front armour is several times rear armour.
  *   2. The more oblique the strike, the more steel the shell has to cross:
@@ -17,13 +29,13 @@ export const ROUNDS = [
   {
     key: 'AP', name: 'AP', full: 'ARMOUR PIERCING',
     pen: 165, damage: 30, speed: 135, reload: 2.1,
-    splash: 0, ricochetDeg: 66, canRicochet: true,
+    splash: 0, ricochetDeg: 35, canRicochet: true,
     tracerLen: 5.5, sound: 'fire.ap', start: 20, max: 60,
   },
   {
     key: 'HE', name: 'HE', full: 'HIGH EXPLOSIVE',
     pen: 45, damage: 20, speed: 90, reload: 2.5,
-    splash: 7.5, splashDamage: 26, ricochetDeg: 80, canRicochet: true,
+    splash: 7.5, splashDamage: 26, ricochetDeg: 44, canRicochet: true,
     tracerLen: 3.5, sound: 'fire.he', start: 14, max: 40,
   },
   {
@@ -35,7 +47,7 @@ export const ROUNDS = [
   {
     key: 'CANISTER', name: 'CANISTER', full: 'ANTI-PERSONNEL',
     pen: 14, damage: 11, speed: 150, reload: 2.3,
-    splash: 0, ricochetDeg: 55, canRicochet: true,
+    splash: 0, ricochetDeg: 30, canRicochet: true,
     pellets: 11, spreadDeg: 15, range: 34,
     tracerLen: 2.0, sound: 'fire.canister', start: 6, max: 18,
   },
@@ -54,6 +66,7 @@ export const ARMOUR = {
 };
 
 const DEG = Math.PI / 180;
+const EMPTY_MODS = Object.freeze({});
 
 /** Which face of `target` a shell travelling along `dir` strikes.
  *  Returns { face, obliquity } with obliquity in radians: 0 is a square-on hit. */
@@ -76,32 +89,44 @@ export function faceOf(targetHeading, dirX, dirZ) {
  * @returns {{ outcome:'ricochet'|'nonpen'|'pen'|'crit', damage:number, face:string,
  *             effective:number, obliquity:number }}
  */
-export function resolveImpact(round, armour, targetHeading, dirX, dirZ, rng = Math.random) {
+/**
+ * @param mods optional upgrade effects:
+ *   armourMul        thicker plate on the target
+ *   penMul, dmgMul   a hotter round
+ *   ricochetDegDelta lowers the angle at which shots skip off the TARGET
+ *   noRicochet       this round never skips (APFSDS)
+ */
+export function resolveImpact(round, armour, targetHeading, dirX, dirZ, rng = Math.random,
+                              mods = EMPTY_MODS) {
   const { face, obliquity } = faceOf(targetHeading, dirX, dirZ);
-  const base = armour[face];
+  const base = armour[face] * (mods.armourMul || 1);
+  const pen = round.pen * (mods.penMul || 1);
 
   // Oblique strikes present more steel. Cap the multiplier so a glancing blow is
   // "impossible" rather than "infinitely thick", which would read as a bug.
   const cos = Math.max(Math.cos(obliquity), 0.2);
   const effective = base / cos;
 
-  if (round.canRicochet && obliquity > round.ricochetDeg * DEG) {
+  const skipAt = (round.ricochetDeg + (mods.ricochetDegDelta || 0)) * DEG;
+  if (round.canRicochet && !mods.noRicochet && obliquity > skipAt) {
     // Enough overmatch still bites: a dart twice the armour's worth will not skip.
-    if (round.pen < base * 2.0) {
+    if (pen < base * 2.0) {
       return { outcome: 'ricochet', damage: 0, face, effective, obliquity };
     }
   }
 
-  if (round.pen < effective) {
+  const dmgBase = round.damage * (mods.dmgMul || 1);
+
+  if (pen < effective) {
     // A near miss still rings the crew's bell a little; a clean stop does nothing.
-    const shortfall = effective - round.pen;
-    const spall = shortfall < effective * 0.12 ? Math.round(round.damage * 0.2) : 0;
+    const shortfall = effective - pen;
+    const spall = shortfall < effective * 0.12 ? Math.round(dmgBase * 0.2) : 0;
     return { outcome: 'nonpen', damage: spall, face, effective, obliquity };
   }
 
   // Through. Overmatch adds a little, and a rear hit can cook the ammunition off.
-  const over = Math.min(round.pen / effective, 2.4);
-  let damage = round.damage * (0.75 + 0.35 * over);
+  const over = Math.min(pen / effective, 2.4);
+  let damage = dmgBase * (0.75 + 0.35 * over);
   let outcome = 'pen';
   const critChance = face === 'rear' ? 0.22 : face === 'side' ? 0.1 : 0.03;
   if (rng() < critChance) {

@@ -123,6 +123,7 @@ function updateCursor() {
 
 let last = performance.now();
 let paused = false;
+let wasDrafting = false;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -135,25 +136,37 @@ function frame(now) {
   if (!paused) {
     updateAim();
 
-    if (game.running && game.state !== 'over') {
-      const r = input.consumeRound();
-      if (r !== null && game.player.selectRound(r)) Audio.play('select');
-
-      if (input.consumeFire()) game.playerFire();
-      else if (input.fireHeld && game.player.canFire()) game.playerFire();
-      if (input.mgHeld) game.playerMG();
-
-      const wasReady = game.player.reload >= 1;
-      game.update(dt, input, aimPoint);
-      if (!wasReady && game.player.reload >= 1) Audio.play('reloadDone', { gain: 0.5 });
-    } else {
-      game.update(dt, input, aimPoint);
+    // a pending level opens the draft; the battle holds while it is up
+    if (game.running && game.state !== 'over') game.offerLevelUp();
+    const drafting = HUD.levelUpOpen;
+    if (drafting !== wasDrafting) {
+      wasDrafting = drafting;
+      // the crosshair is hidden during play; give the real pointer back to pick a card
+      document.body.classList.toggle('playing', !drafting);
+      if (drafting) Audio.engineThrottle(0);
     }
 
-    updateCamera(dt);
+    if (!drafting) {
+      if (game.running && game.state !== 'over') {
+        const r = input.consumeRound();
+        if (r !== null && game.player.selectRound(r)) Audio.play('select');
+
+        if (input.consumeFire()) game.playerFire();
+        else if (input.fireHeld && game.player.canFire()) game.playerFire();
+        if (input.mgHeld) game.playerMG();
+
+        const wasReady = game.player.reload >= 1;
+        game.update(dt, input, aimPoint);
+        if (!wasReady && game.player.reload >= 1) Audio.play('reloadDone', { gain: 0.5 });
+      } else {
+        game.update(dt, input, aimPoint);
+      }
+      updateCamera(dt);
+    }
+
     HUD.setStats(game.stats());
     HUD.update(dt);
-    if (game.running) updateCursor();
+    if (game.running && !drafting) updateCursor();
   }
 
   renderer.render(scene, camera);
