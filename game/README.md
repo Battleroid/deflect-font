@@ -1,5 +1,7 @@
 # DEFLECT
 
+**[Play it](https://caseyweed.com/deflect-font/)**
+
 A top-down tank survival game, and a working argument for the typeface: the HUD, the
 damage counters, the RICOCHET indicators and the range markings painted on the ground
 are all set in Deflect Stencil.

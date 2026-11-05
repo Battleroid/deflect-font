@@ -15,7 +15,7 @@ outlines *and* as hand-fitted pixel fonts for small displays.
 Dedicated to the public domain under [CC0 1.0](LICENSE) — the font and the tools that
 build it. Use them for anything, commercial or not, with no attribution.
 
-**[Play DEFLECT](https://battleroid.github.io/deflect-font/)** — a top-down tank survival
+**[Play DEFLECT](https://caseyweed.com/deflect-font/)** — a top-down tank survival
 game built to show the typeface doing its job: every damage number, every RICOCHET, the
 whole HUD and the range markings painted on the dirt are set in it. Source in
 [`game/`](game/), published to the `gh-pages` branch.
