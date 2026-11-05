@@ -1,0 +1,116 @@
+@font-face {
+  font-family: 'Deflect Stencil';
+  src: url('fonts/DeflectStencil-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Deflect Stencil';
+  src: url('fonts/DeflectStencil-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: block;
+}
+
+:root {
+  --void: #0d0d0a;
+  --ground: #17160f;
+  --grid: #272418;
+  --bone: #e9e4d2;
+  --bone-dim: #b6b1a0;
+  --red: #d6412a;
+  --amber: #f2c230;
+  --blue: #5bc8e8;
+  --grey: #8a8578;
+  --ink: #080806;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+  color: var(--bone);
+  font-family: 'Deflect Stencil', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The game supplies its own crosshair everywhere inside the arena. */
+body.playing, body.playing * { cursor: none; }
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- boot screen ---- */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #1b1a12 0%, var(--void) 70%);
+  z-index: 50;
+  transition: opacity 0.35s ease;
+}
+#boot.gone { opacity: 0; pointer-events: none; }
+
+.boot-inner { text-align: center; padding: 24px; }
+
+#boot h1 {
+  margin: 0;
+  font-weight: 700;
+  font-size: clamp(56px, 16vw, 168px);
+  line-height: 0.95;
+  color: var(--bone);
+  letter-spacing: 0.06em;
+}
+.boot-sub {
+  margin: 6px 0 34px;
+  color: var(--amber);
+  font-size: clamp(13px, 2.6vw, 20px);
+  letter-spacing: 0.4em;
+}
+#start {
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(18px, 3.4vw, 28px);
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  background: var(--amber);
+  border: 0;
+  padding: 14px 54px;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+#start:hover { background: var(--bone); transform: translateY(-2px); }
+#start:active { transform: translateY(0); }
+
+.boot-keys {
+  list-style: none;
+  margin: 34px 0 0;
+  padding: 0;
+  color: var(--bone-dim);
+  font-size: clamp(11px, 1.7vw, 14px);
+  line-height: 2;
+}
+.boot-keys b { color: var(--bone); font-weight: 700; }
+.boot-note {
+  margin-top: 26px;
+  color: var(--grey);
+  font-size: clamp(10px, 1.5vw, 13px);
+  letter-spacing: 0.22em;
+}

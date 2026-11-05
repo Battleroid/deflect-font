@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DEFLECT</title>
+<meta name="description" content="A top-down tank survival game set in Deflect Stencil.">
+
+<link rel="preload" href="fonts/DeflectStencil-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/DeflectStencil-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="js/hud.css">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="hud"></div>
+  <div id="boot">
+    <div class="boot-inner">
+      <h1>DEFLECT</h1>
+      <p class="boot-sub">SURVIVE THE WAVES</p>
+      <button id="start">START</button>
+      <ul class="boot-keys">
+        <li><b>W A S D</b> DRIVE</li>
+        <li><b>MOUSE</b> TRAVERSE TURRET</li>
+        <li><b>LMB</b> MAIN GUN &nbsp; <b>RMB</b> COAX MG</li>
+        <li><b>1 2 3 4</b> AP / HE / HEAT / CANISTER</li>
+      </ul>
+      <p class="boot-note">ANGLE YOUR ARMOUR. FLANK THE HEAVIES.</p>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
