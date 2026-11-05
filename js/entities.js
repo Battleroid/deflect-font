@@ -19,11 +19,11 @@ function wrapAngle(a) {
  * that obstacle is NOT on. Cheap, works for every mover, and keeps the arena
  * feeling open as long as the map leaves real gaps.
  */
-function avoidObstacles(ent, desired, world, lookahead) {
+function avoidObstacles(ent, desired, world, lookahead, movers) {
   const ux = Math.sin(desired), uz = Math.cos(desired);
   let push = 0;
-  for (const o of world.obstacles) {
-    if (!o.solid) continue;
+
+  const consider = (o, pad) => {
     const px = o.x - ent.x, pz = o.z - ent.z;
 
     // How far along our intended path we pass it, and how close we pass. Testing
@@ -31,12 +31,12 @@ function avoidObstacles(ent, desired, world, lookahead) {
     // steps straight over anything we are already alongside, which is exactly
     // when a hull gets hung up on a corner.
     const along = px * ux + pz * uz;
-    if (along > lookahead) continue;
+    if (along > lookahead) return;
     const t = Math.max(0, along);
     const cx = ent.x + ux * t, cz = ent.z + uz * t;
     const clearance = Math.hypot(o.x - cx, o.z - cz);
-    const reach = o.radius + ent.radius + 2.2;
-    if (clearance >= reach) continue;
+    const reach = o.radius + ent.radius + pad;
+    if (clearance >= reach) return;
 
     // Near things and head-on things pull harder than distant glancing ones.
     const urgency = (1 - clearance / reach) * (1 - 0.6 * (t / lookahead));
@@ -44,7 +44,13 @@ function avoidObstacles(ent, desired, world, lookahead) {
     // dead ahead: commit to one side rather than dithering down the middle
     if (Math.abs(side) < 0.08) side = (ent._detourSide || 1) * 0.08;
     push += (side > 0 ? -1 : 1) * urgency;
-  }
+  };
+
+  for (const o of world.obstacles) if (o.solid) consider(o, 2.2);
+  // Steer round each other too. Without this two hulls shove head-on in
+  // moveTo's push-out, each undoing the other, and both sit there grinding.
+  if (movers) for (const m of movers) if (m !== ent && !m.dead) consider(m, 1.6);
+
   return wrapAngle(desired + Math.max(-1.3, Math.min(1.3, push)) * 1.05);
 }
 
@@ -53,19 +59,82 @@ function avoidObstacles(ent, desired, world, lookahead) {
  * Avoidance alone can leave a mover grinding into a corner forever, because the
  * push that would free it is the same size as the push holding it there.
  */
-function unstick(ent, desired, dt, wanted) {
+/**
+ * A heading that runs ALONG whatever is blocking us, on whichever side makes
+ * more progress toward where we were trying to go.
+ *
+ * Offsetting from the player's bearing is not enough on its own: the bearing
+ * keeps pointing through the obstacle, so a hull backs off, turns, and drives
+ * straight back into the same corner. Following the tangent commits it to going
+ * around.
+ */
+function skirtHeading(ent, desired, world, forceSign) {
+  let best = null;
+  for (const o of world.obstacles) {
+    if (!o.solid) continue;
+    const gap = Math.hypot(ent.x - o.x, ent.z - o.z) - o.radius - ent.radius;
+    if (gap < 5 && (!best || gap < best.gap)) best = { o, gap };
+  }
+  if (!best) return null;                       // nothing left to skirt: we are clear
+  const toObstacle = Math.atan2(best.o.x - ent.x, best.o.z - ent.z);
+  let sign = forceSign;
+  if (!sign) {
+    const left = wrapAngle(wrapAngle(toObstacle + Math.PI / 2) - desired);
+    const right = wrapAngle(wrapAngle(toObstacle - Math.PI / 2) - desired);
+    sign = Math.abs(left) < Math.abs(right) ? 1 : -1;
+  }
+  ent._skirtSign = sign;
+  // bias a little away from the obstacle so we peel off rather than grind along it
+  return wrapAngle(toObstacle + sign * (Math.PI / 2 + 0.25));
+}
+
+function unstick(ent, desired, dt, intendedSpeed, world) {
   const moved = Math.hypot(ent.x - (ent._lx ?? ent.x), ent.z - (ent._lz ?? ent.z));
   ent._lx = ent.x; ent._lz = ent.z;
+
   if (ent._detour > 0) {
     ent._detour -= dt;
-    return wrapAngle(desired + ent._detourSide * 1.15);
+    // A short shove backwards to break contact, then run the tangent forwards.
+    // Steering alone cannot free a wedged hull: the push holding it in place is
+    // the same size as the push that would free it.
+    ent.reversing = ent._detour > ent._detourLen - 0.35;
+    // Re-read the tangent as we slide along, so a long obstacle gets followed
+    // rather than left on a straight line that curves back into it.
+    ent._skirtTick -= dt;
+    if (ent._skirtTick <= 0) {
+      ent._skirtTick = 0.25;
+      const h = skirtHeading(ent, desired, world, ent._skirtSign);
+      if (h === null) { ent._detour = 0; ent.reversing = false; return desired; }
+      ent._detourHeading = h;
+    }
+    return ent._detourHeading;
   }
-  if (wanted && moved < Math.abs(ent.speed) * dt * 0.3) {
+  ent.reversing = false;
+
+  // Judge progress against what we MEANT to travel, not against current speed.
+  // Measuring against current speed is circular -- a hull pinned to a wall has a
+  // speed near zero, so "moved less than its speed" is false and it never
+  // notices it is stuck.
+  const want = Math.abs(intendedSpeed) * dt;
+  if (want > 0.002 && moved < want * 0.35) {
     ent._jam = (ent._jam || 0) + dt;
-    if (ent._jam > 0.35) {
+    if (ent._jam > 0.4) {
       ent._jam = 0;
-      ent._detour = 0.7 + Math.random() * 0.5;
-      ent._detourSide = Math.random() < 0.5 ? -1 : 1;
+      /* Jamming again near where we last jammed means we are working along one
+       * long obstacle -- a teeth belt or a hedgerow. Keep the same side and give
+       * it progressively longer to run, so it commits to finding the gap instead
+       * of peeling off, re-aiming at the player and driving back into the belt. */
+      const nearLastJam = Math.hypot(ent.x - (ent._jamX ?? 1e9), ent.z - (ent._jamZ ?? 1e9)) < 12;
+      ent._jamStreak = nearLastJam ? (ent._jamStreak || 0) + 1 : 1;
+      ent._jamX = ent.x; ent._jamZ = ent.z;
+
+      const h = skirtHeading(ent, desired, world, ent._jamStreak > 1 ? ent._skirtSign : 0);
+      if (h !== null) {
+        ent._detourLen = Math.min(1.4 * ent._jamStreak, 6);
+        ent._detour = ent._detourLen;
+        ent._skirtTick = 0.25;
+        ent._detourHeading = h;
+      }
     }
   } else {
     ent._jam = 0;
@@ -156,8 +225,13 @@ export class Vehicle {
     // +Z toward +X, so turning right means heading DECREASES. steer is +1 for
     // right, hence the minus. Kept consistent in reverse too -- real tracks would
     // invert, but having D always mean "swing right" is what a player expects.
+    //
+    // The floor on the rolling bonus matters more than it looks. Tracks pivot in
+    // place, and at 0.35 a stopped heavy turned at 0.3 rad/s -- ten seconds to
+    // face about. Anything that snagged could never steer off, because stopping
+    // was what took its steering away.
     const moving = Math.min(Math.abs(this.speed) / this.maxSpeed, 1);
-    const rate = this.turnRate * mob * (0.35 + 0.65 * moving);
+    const rate = this.turnRate * mob * (0.62 + 0.38 * moving);
     this.heading = wrapAngle(this.heading - steer * rate * dt);
 
     const nx = this.x + Math.sin(this.heading) * this.speed * dt;
@@ -299,8 +373,8 @@ const ENEMY_SPEC = {
             reloadTime: 1.9, pen: 70,  damage: 9,  range: 32, prefer: 22, score: 100 },
   medium: { hp: 85,  armour: ARMOUR.medium, maxSpeed: 12, turnRate: 1.5, turretRate: 1.3,
             reloadTime: 2.8, pen: 130, damage: 15, range: 42, prefer: 30, score: 200 },
-  heavy:  { hp: 160, armour: ARMOUR.heavy,  maxSpeed: 7.5, turnRate: 0.9, turretRate: 0.85,
-            reloadTime: 4.0, pen: 200, damage: 24, range: 48, prefer: 34, score: 400 },
+  heavy:  { hp: 160, armour: ARMOUR.heavy,  maxSpeed: 8.5, turnRate: 1.15, turretRate: 0.85,
+            reloadTime: 4.0, pen: 200, damage: 24, range: 48, prefer: 26, score: 400 },
 };
 
 export class EnemyTank extends Vehicle {
@@ -332,32 +406,40 @@ export class EnemyTank extends Vehicle {
     this.think -= dt;
     if (this.think <= 0) {
       this.think = 0.35 + Math.random() * 0.4;
-      // heavies plant themselves and trade; lights circle and harass
-      if (dist > this.spec.range) this.state = 'advance';
-      else if (dist < this.spec.prefer * 0.55) this.state = 'back';
-      else this.state = this.variant === 'heavy' ? 'hold' : 'circle';
+      /* Anchor on the standoff we actually want, not on maximum gun range.
+       * Anchoring on range parked heavies at 45-odd units where they sat in open
+       * ground doing nothing, which reads as broken AI rather than as tactics.
+       * Also require a clear shot: no point holding station behind a wall. */
+      const band = this.spec.prefer;
+      const next =
+        (!world.hasLineOfFire(this, p) || dist > band * 1.2) ? 'advance'
+          : dist < band * 0.6 ? 'back'
+            : this.variant === 'heavy' ? 'hold' : 'circle';
+      if (next !== this.state) { this.state = next; this.stateTime = 0; }
     }
+    // and never stand still indefinitely
+    if (this.state === 'hold' && this.stateTime > 3.5) { this.state = 'advance'; this.stateTime = 0; }
 
     let desired = toPlayer;
     let throttle = 0;
-    if (this.state === 'advance') { throttle = 1; desired = toPlayer; }
-    else if (this.state === 'back') { throttle = -1; desired = toPlayer; }
+    if (this.state === 'advance') throttle = 1;
+    else if (this.state === 'back') throttle = -1;
     else if (this.state === 'circle') {
       throttle = 1;
       desired = toPlayer + this.flankOffset * 1.15;   // arc around rather than charge
     } else {
-      throttle = 0;
       // angle the hull so the player gets a sloped plate, not a flat one
       desired = toPlayer + 0.55 * this.flankSign;
     }
 
-    desired = this._avoid(desired, world, dt);
+    desired = this._avoid(desired, world, dt, throttle * this.maxSpeed);
+    if (this.reversing) throttle = -1;
 
     // negated to match drive()'s convention: +steer swings the nose right
     const err = wrapAngle(desired - this.heading);
     const steer = Math.abs(err) < 0.05 ? 0 : -Math.sign(err);
-    // don't drive at full tilt while swinging the hull round
-    if (Math.abs(err) > 1.2) throttle *= 0.35;
+    // ease off while swinging the hull round, but never enough to stall the turn
+    if (Math.abs(err) > 1.2 && !this.reversing) throttle *= 0.6;
     this.drive(dt, throttle, steer, world);
 
     // aim with a little lead, and a little error so it is not a laser
@@ -376,14 +458,15 @@ export class EnemyTank extends Vehicle {
   }
 
   /** Nudge the desired heading away from anything solid directly ahead. */
-  _avoid(desired, world, dt) {
-    // keep off the arena wall first -- it overrides everything else
+  _avoid(desired, world, dt, intendedSpeed) {
+    // bend away from the arena wall first, then round everything else
     if (Math.hypot(this.x, this.z) > world.arenaRadius - 10) {
       const inward = Math.atan2(-this.x, -this.z);
-      return wrapAngle(desired + wrapAngle(inward - desired) * 0.5);
+      desired = wrapAngle(desired + wrapAngle(inward - desired) * 0.5);
     }
     const ahead = this.radius + 5 + Math.abs(this.speed) * 0.4;
-    return unstick(this, avoidObstacles(this, desired, world, ahead), dt, true);
+    const clear = avoidObstacles(this, desired, world, ahead, world.allVehicles());
+    return unstick(this, clear, dt, intendedSpeed, world);
   }
 }
 
@@ -445,7 +528,8 @@ export class Infantry {
       want = toPlayer;
       this.speed = 0;
     }
-    want = unstick(this, avoidObstacles(this, want, world, this.radius + 5), dt, this.speed > 0);
+    want = unstick(this, avoidObstacles(this, want, world, this.radius + 5), dt, this.speed, world);
+    if (this.reversing) this.speed = -this.maxSpeed * 0.6;
     this.heading = slew(this.heading, want, 4.5, dt);
 
     let nx = this.x + Math.sin(this.heading) * this.speed * dt;
